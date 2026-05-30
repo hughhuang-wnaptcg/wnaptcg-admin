@@ -32,7 +32,7 @@ export default function AdminSettings() {
         await supabase.from('settings').upsert({ key: 'announcement', value: JSON.stringify(form.announcement || '') })
         setAnnouncement(form.announcement || '')
       } else if (modal === 'news') {
-        const newsData = { title: form.title || '', date: form.date || '', image_url: form.image_url || '' }
+        const newsData = { title: form.title || '', date: form.date || '', image_url: form.image_url || '', body: form.body || '' }
         await supabase.from('settings').upsert({ key: 'news', value: JSON.stringify(newsData) })
         setNews(newsData)
       } else {
@@ -73,7 +73,7 @@ export default function AdminSettings() {
   function openModal(type) {
     if (type === 'points') setForm({ points_login: settings.points_login, points_streak_bonus: settings.points_streak_bonus, points_purchase_ratio: settings.points_purchase_ratio })
     if (type === 'announcement') setForm({ announcement })
-    if (type === 'news') { setForm({ ...news }); setPreview(news.image_url || null) }
+    if (type === 'news') { setForm({ title: news.title||'', date: news.date||'', image_url: news.image_url||'', body: news.body||'' }); setPreview(news.image_url || null) }
     setModal(type)
   }
 
@@ -280,9 +280,16 @@ export default function AdminSettings() {
               <label style={{ fontSize: 11, color: '#999', display: 'block', marginBottom: 4 }}>新聞標題</label>
               <input value={form.title || ''} onChange={e => setForm({ ...form, title: e.target.value })} placeholder="例：新系列「夜想天幕」即將發售！" style={inputStyle} />
             </div>
-            <div style={{ marginBottom: 16 }}>
+            <div style={{ marginBottom: 12 }}>
               <label style={{ fontSize: 11, color: '#999', display: 'block', marginBottom: 4 }}>日期</label>
               <input type="date" value={form.date || ''} onChange={e => setForm({ ...form, date: e.target.value })} style={inputStyle} />
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ fontSize: 11, color: '#999', display: 'block', marginBottom: 4 }}>內文</label>
+              <textarea value={form.body || ''} onChange={e => setForm({ ...form, body: e.target.value })}
+                placeholder="輸入新聞內文..."
+                rows={5}
+                style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.6 }} />
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
               <button onClick={() => { setModal(null); setPreview(null) }} style={{ flex: 1, padding: 9, border: '0.5px solid #ddd', borderRadius: 8, fontSize: 13, color: '#666', background: 'transparent', cursor: 'pointer' }}>取消</button>
