@@ -3,11 +3,12 @@ import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 
 const NAV = [
-  { path: '/', label: '總覽', icon: '📊' },
-  { path: '/members', label: '會員管理', icon: '👥' },
-  { path: '/cards', label: '戰績牆', icon: '🏆' },
-  { path: '/boss', label: 'Boss 管理', icon: '⚔️' },
-  { path: '/settings', label: '系統設定', icon: '⚙️' },
+  { path: '/', label: '總覽', icon: 'fa-chart-bar' },
+  { path: '/members', label: '會員管理', icon: 'fa-users' },
+  { path: '/purchases', label: '消費記錄', icon: 'fa-bag-shopping' },
+  { path: '/cards', label: '戰績牆', icon: 'fa-trophy' },
+  { path: '/boss', label: 'Boss 管理', icon: 'fa-shield' },
+  { path: '/settings', label: '系統設定', icon: 'fa-gear' },
 ]
 
 export default function Layout({ admin, setAdmin }) {
@@ -24,6 +25,7 @@ export default function Layout({ admin, setAdmin }) {
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh', background: '#f5f5f5' }}>
+      {/* 側邊欄 */}
       <div style={{ width: 200, background: '#fff', borderRight: '0.5px solid #e5e5e5', display: 'flex', flexDirection: 'column', flexShrink: 0, position: 'sticky', top: 0, height: '100vh' }}>
         <div style={{ padding: '16px 14px 12px', borderBottom: '0.5px solid #e5e5e5' }}>
           <div style={{ fontSize: 12, fontWeight: 600, letterSpacing: '0.06em', color: '#111' }}>W/NA PTCG</div>
@@ -43,20 +45,24 @@ export default function Layout({ admin, setAdmin }) {
               style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 8, cursor: 'pointer', fontSize: 13, marginBottom: 2,
                 background: isActive(n.path) ? '#FCEBEB' : 'transparent',
                 color: isActive(n.path) ? '#A32D2D' : '#666' }}>
-              <span style={{ fontSize: 16 }}>{n.icon}</span> {n.label}
+              <i className={`fa-solid ${n.icon}`} style={{ fontSize: 14, width: 16, textAlign: 'center' }}></i>
+              {n.label}
             </div>
           ))}
         </div>
 
         <div style={{ padding: '12px 14px', borderTop: '0.5px solid #e5e5e5', display: 'flex', alignItems: 'center', gap: 8 }}>
-          <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#FAEEDA', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 600, color: '#633806', flexShrink: 0 }}>
-            {admin?.display_name?.[0]?.toUpperCase()}
-          </div>
+          {admin?.avatar_url
+            ? <img src={admin.avatar_url} alt="" style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
+            : <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#FAEEDA', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 600, color: '#633806', flexShrink: 0 }}>
+                {admin?.display_name?.[0]?.toUpperCase()}
+              </div>
+          }
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 12, fontWeight: 500, color: '#111' }}>{admin?.display_name}</div>
             <div style={{ fontSize: 10, color: '#999' }}>超級管理員</div>
           </div>
-          <span style={{ fontSize: 16, cursor: 'pointer', color: '#aaa' }} onClick={handleSignOut} title="登出">🚪</span>
+          <i className="fa-solid fa-right-from-bracket" style={{ fontSize: 13, cursor: 'pointer', color: '#aaa' }} onClick={handleSignOut} title="登出"></i>
         </div>
       </div>
 
