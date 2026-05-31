@@ -1,15 +1,16 @@
 import React, { useEffect, useState } from 'react'
 import { LevelBadge } from '../lib/pokeballs'
-import { supabase, getLevel } from '../lib/supabase'
+import { supabase, supabaseAdmin, getLevel } from '../lib/supabase'
 
 export default function AdminMembers() {
   const [members, setMembers] = useState([])
   const [search, setSearch] = useState('')
   const [levelFilter, setLevelFilter] = useState('')
-  const [modal, setModal] = useState(null)
+  const [modal, setModal] = useState(null) // { type: 'adjust', member } | { type: 'delete', member }
   const [adjustPoints, setAdjustPoints] = useState({ type: 'add', amount: '', note: '' })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [deleteConfirmName, setDeleteConfirmName] = useState('')
 
   useEffect(() => { fetchMembers() }, [])
 
@@ -25,21 +26,46 @@ export default function AdminMembers() {
     return matchSearch && matchLevel
   })
 
+  // ── 調整積分 ────────────────────────────────────────
   async function handleAdjustPoints() {
     if (!adjustPoints.amount || !modal) return
     setSaving(true)
     const delta = adjustPoints.type === 'add' ? parseInt(adjustPoints.amount) : -parseInt(adjustPoints.amount)
-    const newPoints = Math.max(0, modal.points + delta)
+    const newPoints = Math.max(0, modal.member.points + delta)
     const newLevel = getLevel(newPoints)
-    await supabase.from('members').update({ points: newPoints, level: newLevel }).eq('id', modal.id)
-    await supabase.from('point_logs').insert({ member_id: modal.id, type: 'manual', points: delta, note: adjustPoints.note || '管理員手動調整' })
+    await supabase.from('members').update({ points: newPoints, level: newLevel }).eq('id', modal.member.id)
+    await supabase.from('point_logs').insert({ member_id: modal.member.id, type: 'manual', points: delta, note: adjustPoints.note || '管理員手動調整' })
     await fetchMembers()
     setModal(null)
     setAdjustPoints({ type: 'add', amount: '', note: '' })
     setSaving(false)
   }
 
+  // ── 刪除會員 ────────────────────────────────────────
+  async function handleDeleteMember() {
+    if (!modal?.member) return
+    setSaving(true)
+    const uid = modal.member.id
+    try {
+      // 1. 刪除關聯資料
+      await supabase.from('point_logs').delete().eq('member_id', uid)
+      await supabase.from('daily_logins').delete().eq('member_id', uid)
+      await supabase.from('boss_purchases').delete().eq('member_id', uid)
+      // 2. 刪除 members 資料
+      await supabase.from('members').delete().eq('id', uid)
+      // 3. 刪除 Supabase Auth 帳號
+      await supabaseAdmin.auth.admin.deleteUser(uid)
+      await fetchMembers()
+      setModal(null)
+      setDeleteConfirmName('')
+    } catch (err) {
+      console.error('刪除失敗', err)
+    }
+    setSaving(false)
+  }
+
   const inp = { width: '100%', padding: '8px 10px', border: '0.5px solid #ddd', borderRadius: 7, fontSize: 13, color: '#111', outline: 'none', boxSizing: 'border-box', background: '#fff' }
+  const isDeleteConfirmed = deleteConfirmName === modal?.member?.display_name
 
   return (
     <div style={{ padding: 24, position: 'relative' }}>
@@ -90,10 +116,16 @@ export default function AdminMembers() {
                 <td style={{ padding: '10px 14px', color: '#999' }}>{new Date(m.created_at).toLocaleDateString('zh-TW')}</td>
                 <td style={{ padding: '10px 14px', color: '#999' }}>{m.last_login_date || '-'}</td>
                 <td style={{ padding: '10px 14px' }}>
-                  <button onClick={() => { setModal(m); setAdjustPoints({ type:'add', amount:'', note:'' }) }}
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', border: '0.5px solid #ddd', borderRadius: 6, fontSize: 11, color: '#666', background: 'transparent', cursor: 'pointer' }}>
-                    <i className="fa-solid fa-coins" style={{ fontSize: 10 }}></i> 調整積分
-                  </button>
+                  <div style={{ display: 'flex', gap: 5 }}>
+                    <button onClick={() => { setModal({ type: 'adjust', member: m }); setAdjustPoints({ type:'add', amount:'', note:'' }) }}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', border: '0.5px solid #ddd', borderRadius: 6, fontSize: 11, color: '#666', background: 'transparent', cursor: 'pointer' }}>
+                      <i className="fa-solid fa-coins" style={{ fontSize: 10 }}></i> 調整積分
+                    </button>
+                    <button onClick={() => { setModal({ type: 'delete', member: m }); setDeleteConfirmName('') }}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', border: '0.5px solid #F09595', borderRadius: 6, fontSize: 11, color: '#A32D2D', background: 'transparent', cursor: 'pointer' }}>
+                      <i className="fa-solid fa-trash" style={{ fontSize: 10 }}></i> 刪除
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -104,18 +136,19 @@ export default function AdminMembers() {
         </div>
       </div>
 
-      {modal && (
+      {/* ── 調整積分 Modal ── */}
+      {modal?.type === 'adjust' && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div style={{ background: '#fff', borderRadius: 12, width: 340, padding: 20 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                {modal.avatar_url
-                  ? <img src={modal.avatar_url} alt="" style={{ width: 34, height: 34, borderRadius: '50%', objectFit: 'cover' }} />
-                  : <div style={{ width: 34, height: 34, borderRadius: '50%', background: '#FAEEDA', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 600, color: '#633806' }}>{modal.display_name?.[0]}</div>
+                {modal.member.avatar_url
+                  ? <img src={modal.member.avatar_url} alt="" style={{ width: 34, height: 34, borderRadius: '50%', objectFit: 'cover' }} />
+                  : <div style={{ width: 34, height: 34, borderRadius: '50%', background: '#FAEEDA', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 600, color: '#633806' }}>{modal.member.display_name?.[0]}</div>
                 }
                 <div>
-                  <div style={{ fontSize: 14, fontWeight: 500, color: '#111' }}>{modal.display_name}</div>
-                  <div style={{ fontSize: 11, color: '#999' }}>{modal.level} · {modal.points?.toLocaleString()} 點</div>
+                  <div style={{ fontSize: 14, fontWeight: 500, color: '#111' }}>{modal.member.display_name}</div>
+                  <div style={{ fontSize: 11, color: '#999' }}>{modal.member.level} · {modal.member.points?.toLocaleString()} 點</div>
                 </div>
               </div>
               <span style={{ fontSize: 18, cursor: 'pointer', color: '#aaa' }} onClick={() => setModal(null)}>✕</span>
@@ -132,7 +165,7 @@ export default function AdminMembers() {
               <input type="number" value={adjustPoints.amount} onChange={e => setAdjustPoints({ ...adjustPoints, amount: e.target.value })} placeholder="輸入數量..." style={inp} />
               {adjustPoints.amount && (
                 <div style={{ fontSize: 11, color: '#aaa', marginTop: 4 }}>
-                  調整後：{Math.max(0, modal.points + (adjustPoints.type==='add'?1:-1)*parseInt(adjustPoints.amount||0)).toLocaleString()} 點
+                  調整後：{Math.max(0, modal.member.points + (adjustPoints.type==='add'?1:-1)*parseInt(adjustPoints.amount||0)).toLocaleString()} 點
                 </div>
               )}
             </div>
@@ -143,8 +176,76 @@ export default function AdminMembers() {
             <div style={{ display: 'flex', gap: 8 }}>
               <button onClick={() => setModal(null)} style={{ flex: 1, padding: 9, border: '0.5px solid #ddd', borderRadius: 8, fontSize: 13, color: '#666', background: 'transparent', cursor: 'pointer' }}>取消</button>
               <button onClick={handleAdjustPoints} disabled={saving || !adjustPoints.amount}
-                style={{ flex: 1, padding: 9, background: saving||!adjustPoints.amount ? '#ccc' : '#E24B4A', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 500, color: 'white', cursor: 'pointer' }}>
+                style={{ flex: 1, padding: 9, background: saving||!adjustPoints.amount ? '#ccc' : '#06C755', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 500, color: 'white', cursor: 'pointer' }}>
                 {saving ? '處理中...' : '確認調整'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── 刪除會員 Modal ── */}
+      {modal?.type === 'delete' && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
+          <div style={{ background: '#fff', borderRadius: 12, width: 360, padding: 20 }}>
+            {/* 標題 */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{ width: 34, height: 34, borderRadius: 8, background: '#FCEBEB', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <i className="fa-solid fa-trash" style={{ fontSize: 14, color: '#A32D2D' }}></i>
+                </div>
+                <div style={{ fontSize: 15, fontWeight: 500, color: '#111' }}>刪除會員</div>
+              </div>
+              <span style={{ fontSize: 18, cursor: 'pointer', color: '#aaa' }} onClick={() => setModal(null)}>✕</span>
+            </div>
+
+            {/* 會員資料卡 */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: '#f8f8f8', borderRadius: 8, marginBottom: 12 }}>
+              {modal.member.avatar_url
+                ? <img src={modal.member.avatar_url} alt="" style={{ width: 34, height: 34, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
+                : <div style={{ width: 34, height: 34, borderRadius: '50%', background: '#FAEEDA', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 600, color: '#633806', flexShrink: 0 }}>{modal.member.display_name?.[0]}</div>
+              }
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 500, color: '#111' }}>{modal.member.display_name}</div>
+                <div style={{ fontSize: 11, color: '#999' }}>#{String(modal.member.member_no||'0').padStart(4,'0')} · {modal.member.level} · {modal.member.points?.toLocaleString()} 點</div>
+              </div>
+            </div>
+
+            {/* 刪除範圍說明 */}
+            <div style={{ background: '#FCEBEB', border: '0.5px solid #F09595', borderRadius: 8, padding: '10px 12px', marginBottom: 14 }}>
+              <div style={{ fontSize: 12, color: '#A32D2D', fontWeight: 500, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 5 }}>
+                <i className="fa-solid fa-triangle-exclamation"></i> 此操作不可復原，將同時刪除：
+              </div>
+              {['會員帳號（無法再登入）', '所有積分紀錄', '所有消費記錄', '所有登入紀錄', 'BOSS 挑戰紀錄'].map(item => (
+                <div key={item} style={{ fontSize: 12, color: '#A32D2D', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                  <i className="fa-solid fa-xmark" style={{ fontSize: 10 }}></i> {item}
+                </div>
+              ))}
+            </div>
+
+            {/* 輸入名稱確認 */}
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ fontSize: 12, color: '#666', display: 'block', marginBottom: 6 }}>
+                請輸入 <strong style={{ color: '#111' }}>{modal.member.display_name}</strong> 以確認刪除
+              </label>
+              <input
+                value={deleteConfirmName}
+                onChange={e => setDeleteConfirmName(e.target.value)}
+                placeholder={`輸入「${modal.member.display_name}」`}
+                style={{ ...inp, border: `0.5px solid ${isDeleteConfirmed ? '#86efac' : '#ddd'}`, background: isDeleteConfirmed ? '#f0fdf4' : '#fff' }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={() => { setModal(null); setDeleteConfirmName('') }}
+                style={{ flex: 1, padding: 9, border: '0.5px solid #ddd', borderRadius: 8, fontSize: 13, color: '#666', background: 'transparent', cursor: 'pointer' }}>
+                取消
+              </button>
+              <button
+                onClick={handleDeleteMember}
+                disabled={saving || !isDeleteConfirmed}
+                style={{ flex: 1, padding: 9, background: saving || !isDeleteConfirmed ? '#ccc' : '#E24B4A', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 500, color: 'white', cursor: 'pointer' }}>
+                {saving ? '刪除中...' : '確認刪除'}
               </button>
             </div>
           </div>
