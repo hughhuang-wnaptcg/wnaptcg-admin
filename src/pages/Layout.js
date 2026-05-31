@@ -6,6 +6,7 @@ const NAV = [
   { path: '/', label: '總覽', icon: 'fa-chart-bar' },
   { path: '/members', label: '會員管理', icon: 'fa-users' },
   { path: '/purchases', label: '消費記錄', icon: 'fa-bag-shopping' },
+  { path: '/shipping', label: '出貨管理', icon: 'fa-truck' },
   { path: '/cards', label: '戰績牆', icon: 'fa-trophy' },
   { path: '/boss', label: 'Boss 管理', icon: 'fa-shield' },
   { path: '/settings', label: '系統設定', icon: 'fa-gear' },
@@ -38,7 +39,7 @@ export default function Layout({ admin, setAdmin }) {
           <div style={{ marginTop: 6, display: 'inline-block', fontSize: 10, background: '#FCEBEB', color: '#791F1F', padding: '2px 7px', borderRadius: 20 }}>管理員</div>
         </div>
 
-        <div style={{ padding: '10px 8px', flex: 1 }}>
+        <div style={{ padding: '10px 8px', flex: 1, overflowY: 'auto' }}>
           <div style={{ fontSize: 10, color: '#aaa', padding: '0 8px', marginBottom: 4 }}>主選單</div>
           {NAV.map(n => (
             <div key={n.path} onClick={() => navigate(n.path)}
