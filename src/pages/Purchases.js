@@ -303,7 +303,7 @@ export default function Purchases() {
                   {isEdit ? '編輯預覽（差額）' : '消費預覽'}
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
-                  {isEdit ? [
+                  {(isEdit ? [
                     { label: '消費金額', value: `$${parseFloat(form.amount).toLocaleString()}` },
                     { label: '積分變化', value: `${previewPoints >= oldPoints ? '+' : ''}${previewPoints - oldPoints} 點` },
                     { label: '金額差額', value: `${parseFloat(form.amount) >= oldAmount ? '+' : ''}$${(parseFloat(form.amount) - oldAmount).toLocaleString()}` },
@@ -313,7 +313,7 @@ export default function Purchases() {
                     { label: '獲得積分', value: `+${previewPoints} 點` },
                     { label: '新累積消費', value: `$${((previewMember?.total_spent||0)+parseFloat(form.amount)).toLocaleString()}` },
                     { label: '新積分總計', value: `${((previewMember?.points||0)+previewPoints).toLocaleString()} 點` },
-                  ].map(r => (
+                  ]).map(r => (
                     <div key={r.label} style={{ background: 'rgba(255,255,255,0.7)', borderRadius: 6, padding: '6px 8px' }}>
                       <div style={{ fontSize: 10, color: '#666', marginBottom: 2 }}>{r.label}</div>
                       <div style={{ fontSize: 12, fontWeight: 600, color: '#166534' }}>{r.value}</div>
