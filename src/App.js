@@ -6,6 +6,7 @@ import Layout from './pages/Layout'
 import Dashboard from './pages/Dashboard'
 import Members from './pages/Members'
 import Purchases from './pages/Purchases'
+import Shipping from './pages/Shipping'
 import Cards from './pages/Cards'
 import Boss from './pages/Boss'
 import Settings from './pages/Settings'
@@ -45,6 +46,7 @@ export default function App() {
           <Route index element={<Dashboard />} />
           <Route path="members" element={<Members />} />
           <Route path="purchases" element={<Purchases />} />
+          <Route path="shipping" element={<Shipping />} />
           <Route path="cards" element={<Cards />} />
           <Route path="boss" element={<Boss />} />
           <Route path="settings" element={<Settings />} />
