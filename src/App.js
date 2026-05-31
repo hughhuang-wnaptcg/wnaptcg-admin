@@ -5,6 +5,7 @@ import LoginPage from './pages/LoginPage'
 import Layout from './pages/Layout'
 import Dashboard from './pages/Dashboard'
 import Members from './pages/Members'
+import Purchases from './pages/Purchases'
 import Cards from './pages/Cards'
 import Boss from './pages/Boss'
 import Settings from './pages/Settings'
@@ -43,6 +44,7 @@ export default function App() {
         <Route path="/" element={<PrivateRoute admin={admin} loading={loading}><Layout admin={admin} setAdmin={setAdmin} /></PrivateRoute>}>
           <Route index element={<Dashboard />} />
           <Route path="members" element={<Members />} />
+          <Route path="purchases" element={<Purchases />} />
           <Route path="cards" element={<Cards />} />
           <Route path="boss" element={<Boss />} />
           <Route path="settings" element={<Settings />} />
