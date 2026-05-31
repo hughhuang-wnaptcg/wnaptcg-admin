@@ -150,9 +150,10 @@ export default function Purchases() {
   // 預覽積分（新增/編輯共用）
   const previewPoints = form.amount ? Math.floor(parseFloat(form.amount || 0) * ratio) : 0
   const previewMember = members.find(m => m.id === form.member_id)
-  const isEdit = modal && modal.mode === 'edit'
-  const oldPoints = isEdit ? (modal.log.points || 0) : 0
-  const oldAmount = isEdit ? (() => { const { amount } = parseLog(modal.log); return amount ? parseFloat(amount.replace(',','')) : 0 })() : 0
+  const isEdit = modal != null && typeof modal === 'object' && modal.mode === 'edit'
+  const editLog = isEdit ? modal.log : null
+  const oldPoints = editLog ? (editLog.points || 0) : 0
+  const oldAmount = editLog ? (() => { const { amount } = parseLog(editLog); return amount ? parseFloat(amount.replace(',','')) : 0 })() : 0
 
   return (
     <div style={{ padding: 24 }}>
@@ -223,7 +224,7 @@ export default function Purchases() {
                       }
                       <div>
                         <div style={{ fontWeight: 500, color: '#111', fontSize: 13 }}>{m?.display_name}</div>
-                        <div style={{ fontSize: 10 }}><LevelBadge level={m?.level} size='xs' /></div>
+                        <div style={{ fontSize: 10 }}><LevelBadge level={m?.level} size='sm' /></div>
                       </div>
                     </div>
                   </td>
@@ -268,12 +269,12 @@ export default function Purchases() {
             {/* 編輯時顯示會員，新增時可選 */}
             {isEdit ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', background: '#f8f8f8', borderRadius: 8, marginBottom: 12 }}>
-                {modal.log.members?.avatar_url
-                  ? <img src={modal.log.members.avatar_url} alt="" style={{ width: 26, height: 26, borderRadius: '50%', objectFit: 'cover' }} />
-                  : <div style={{ width: 26, height: 26, borderRadius: '50%', background: '#FAEEDA', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 600, color: '#633806' }}>{modal.log.members?.display_name?.[0]}</div>
+                {editLog?.members?.avatar_url
+                  ? <img src={editLog?.members.avatar_url} alt="" style={{ width: 26, height: 26, borderRadius: '50%', objectFit: 'cover' }} />
+                  : <div style={{ width: 26, height: 26, borderRadius: '50%', background: '#FAEEDA', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 600, color: '#633806' }}>{editLog?.members?.display_name?.[0]}</div>
                 }
-                <div style={{ fontSize: 13, fontWeight: 500, color: '#111' }}>{modal.log.members?.display_name}</div>
-                <div style={{ fontSize: 11, color: '#999', marginLeft: 'auto' }}>{modal.log.members?.level}</div>
+                <div style={{ fontSize: 13, fontWeight: 500, color: '#111' }}>{editLog?.members?.display_name}</div>
+                <div style={{ fontSize: 11, color: '#999', marginLeft: 'auto' }}>{editLog?.members?.level}</div>
               </div>
             ) : (
               <div style={{ marginBottom: 12 }}>
@@ -342,7 +343,7 @@ export default function Purchases() {
             <div style={{ fontSize: 12, color: '#999', marginBottom: 16 }}>此操作不可復原，同時會扣回對應積分</div>
             <div style={{ background: '#f8f8f8', borderRadius: 8, padding: '10px 12px', marginBottom: 10 }}>
               {[
-                { label: '會員', value: modal.log.members?.display_name },
+                { label: '會員', value: editLog?.members?.display_name },
                 { label: '消費金額', value: (() => { const { amount } = parseLog(modal.log); return amount ? `$${amount}` : '—' })() },
                 { label: '備註', value: parseLog(modal.log).remark || '—' },
               ].map(r => (
@@ -354,7 +355,7 @@ export default function Purchases() {
             </div>
             <div style={{ background: '#FCEBEB', border: '0.5px solid #F09595', borderRadius: 8, padding: '8px 12px', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 7 }}>
               <i className="fa-solid fa-triangle-exclamation" style={{ fontSize: 13, color: '#A32D2D' }}></i>
-              <div style={{ fontSize: 12, color: '#A32D2D' }}>將扣回 <strong>{modal.log.points} 點</strong>積分，累積消費同步減少</div>
+              <div style={{ fontSize: 12, color: '#A32D2D' }}>將扣回 <strong>{editLog?.points} 點</strong>積分，累積消費同步減少</div>
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
               <button onClick={() => setModal(null)} style={{ flex: 1, padding: 9, border: '0.5px solid #ddd', borderRadius: 8, fontSize: 13, color: '#666', background: 'transparent', cursor: 'pointer' }}>取消</button>
