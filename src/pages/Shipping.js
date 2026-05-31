@@ -1,11 +1,11 @@
 import React, { useEffect, useState } from 'react'
-import { supabase } from '../lib/supabase'
+import { supabaseAdmin } from '../lib/supabase'
 
 const STATUS_LABEL = { pending: '待出貨', completed: '已完成', cancelled: '已取消' }
 const STATUS_COLOR = {
-  pending:   { bg: '#FAEEDA', color: '#8B5A00', border: '#FAC775' },
-  completed: { bg: '#EAF3DE', color: '#173404', border: '#86C566' },
-  cancelled: { bg: '#f5f5f5', color: '#999',    border: '#ddd' },
+  pending:   { bg: '#FAEEDA', color: '#8B5A00' },
+  completed: { bg: '#EAF3DE', color: '#173404' },
+  cancelled: { bg: '#f5f5f5', color: '#999' },
 }
 
 export default function Shipping() {
@@ -13,14 +13,14 @@ export default function Shipping() {
   const [loading, setLoading] = useState(true)
   const [statusFilter, setStatusFilter] = useState('')
   const [search, setSearch] = useState('')
-  const [modal, setModal] = useState(null) // { type: 'edit'|'delete', order }
+  const [modal, setModal] = useState(null)
   const [editForm, setEditForm] = useState({ store_name: '', recipient_name: '', phone: '', note: '', status: '' })
   const [saving, setSaving] = useState(false)
 
   useEffect(() => { fetchOrders() }, [])
 
   async function fetchOrders() {
-    const { data } = await supabase
+    const { data } = await supabaseAdmin
       .from('shipping_orders')
       .select('*, members(display_name, avatar_url, level, member_no)')
       .order('created_at', { ascending: false })
@@ -38,48 +38,54 @@ export default function Shipping() {
     return matchSearch && matchStatus
   })
 
-  // 統計
   const stats = {
     pending: orders.filter(o => o.status === 'pending').length,
     completed: orders.filter(o => o.status === 'completed').length,
     cancelled: orders.filter(o => o.status === 'cancelled').length,
   }
 
-  // ── 快速更新狀態 ────────────────────────────────────
   async function quickUpdateStatus(orderId, newStatus) {
-    await supabase.from('shipping_orders').update({
+    await supabaseAdmin.from('shipping_orders').update({
       status: newStatus,
+      updated_at: new Date().toISOString(),
       ...(newStatus === 'cancelled' ? { cancelled_at: new Date().toISOString() } : {}),
     }).eq('id', orderId)
     await fetchOrders()
   }
 
-  // ── 編輯 ────────────────────────────────────────────
   function openEdit(order) {
-    setEditForm({ store_name: order.store_name, recipient_name: order.recipient_name, phone: order.phone, note: order.note || '', status: order.status })
+    setEditForm({
+      store_name: order.store_name,
+      recipient_name: order.recipient_name,
+      phone: order.phone,
+      note: order.note || '',
+      status: order.status,
+    })
     setModal({ type: 'edit', order })
   }
 
   async function handleEdit() {
     setSaving(true)
-    await supabase.from('shipping_orders').update({
+    const { error } = await supabaseAdmin.from('shipping_orders').update({
       store_name: editForm.store_name,
       recipient_name: editForm.recipient_name,
       phone: editForm.phone,
       note: editForm.note,
       status: editForm.status,
-      ...(editForm.status === 'cancelled' && modal.order.status !== 'cancelled' ? { cancelled_at: new Date().toISOString() } : {}),
       updated_at: new Date().toISOString(),
+      ...(editForm.status === 'cancelled' && modal.order.status !== 'cancelled'
+        ? { cancelled_at: new Date().toISOString() } : {}),
     }).eq('id', modal.order.id)
-    await fetchOrders()
-    setModal(null)
+    if (!error) {
+      await fetchOrders()
+      setModal(null)
+    }
     setSaving(false)
   }
 
-  // ── 刪除 ────────────────────────────────────────────
   async function handleDelete() {
     setSaving(true)
-    await supabase.from('shipping_orders').delete().eq('id', modal.order.id)
+    await supabaseAdmin.from('shipping_orders').delete().eq('id', modal.order.id)
     await fetchOrders()
     setModal(null)
     setSaving(false)
@@ -89,7 +95,6 @@ export default function Shipping() {
 
   return (
     <div style={{ padding: 24 }}>
-      {/* 標題 */}
       <div style={{ fontSize: 20, fontWeight: 500, color: '#111', marginBottom: 16 }}>出貨管理</div>
 
       {/* 統計卡 */}
@@ -145,7 +150,6 @@ export default function Shipping() {
               const sc = STATUS_COLOR[order.status] || STATUS_COLOR.cancelled
               return (
                 <tr key={order.id} style={{ borderBottom: '0.5px solid #f0f0f0' }}>
-                  {/* 會員 */}
                   <td style={{ padding: '10px 14px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       {m?.avatar_url
@@ -166,26 +170,23 @@ export default function Shipping() {
                   <td style={{ padding: '10px 14px', color: '#999', maxWidth: 120 }}>
                     <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{order.note || '—'}</div>
                   </td>
-                  {/* 狀態 + 快速切換 */}
                   <td style={{ padding: '10px 14px' }}>
-                    {order.status === 'pending' ? (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                        <span style={{ fontSize: 11, background: sc.bg, color: sc.color, padding: '2px 8px', borderRadius: 20, fontWeight: 500, display: 'inline-block', textAlign: 'center' }}>待出貨</span>
-                        <button onClick={() => quickUpdateStatus(order.id, 'completed')}
-                          style={{ fontSize: 10, background: '#EAF3DE', color: '#173404', border: 'none', borderRadius: 20, padding: '2px 8px', cursor: 'pointer' }}>
-                          → 標記完成
-                        </button>
-                      </div>
-                    ) : (
-                      <span style={{ fontSize: 11, background: sc.bg, color: sc.color, padding: '2px 8px', borderRadius: 20, fontWeight: 500 }}>
-                        {STATUS_LABEL[order.status]}
-                      </span>
-                    )}
+                    <span style={{ fontSize: 11, background: sc.bg, color: sc.color, padding: '3px 10px', borderRadius: 20, fontWeight: 500, whiteSpace: 'nowrap' }}>
+                      {STATUS_LABEL[order.status]}
+                    </span>
                   </td>
-                  <td style={{ padding: '10px 14px', color: '#999', whiteSpace: 'nowrap' }}>{new Date(order.created_at).toLocaleDateString('zh-TW')}</td>
-                  {/* 操作 */}
+                  <td style={{ padding: '10px 14px', color: '#999', whiteSpace: 'nowrap' }}>
+                    {new Date(order.created_at).toLocaleDateString('zh-TW')}
+                  </td>
                   <td style={{ padding: '10px 14px' }}>
-                    <div style={{ display: 'flex', gap: 5 }}>
+                    <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                      {/* 待出貨才顯示「標記已完成」 */}
+                      {order.status === 'pending' && (
+                        <button onClick={() => quickUpdateStatus(order.id, 'completed')}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 8px', border: '0.5px solid #86C566', borderRadius: 6, fontSize: 11, color: '#173404', background: '#EAF3DE', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                          <i className="fa-solid fa-check" style={{ fontSize: 10 }}></i> 標記已完成
+                        </button>
+                      )}
                       <button onClick={() => openEdit(order)}
                         style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 8px', border: '0.5px solid #ddd', borderRadius: 6, fontSize: 11, color: '#666', background: 'transparent', cursor: 'pointer' }}>
                         <i className="fa-solid fa-pen" style={{ fontSize: 10 }}></i> 編輯
@@ -222,7 +223,8 @@ export default function Shipping() {
             ].map(f => (
               <div key={f.key} style={{ marginBottom: 12 }}>
                 <label style={{ fontSize: 11, color: '#999', display: 'block', marginBottom: 4 }}>{f.label}</label>
-                <input value={editForm[f.key]} onChange={e => setEditForm({ ...editForm, [f.key]: e.target.value })} placeholder={f.placeholder} style={inp} />
+                <input value={editForm[f.key]} onChange={e => setEditForm({ ...editForm, [f.key]: e.target.value })}
+                  placeholder={f.placeholder} style={inp} />
               </div>
             ))}
             <div style={{ marginBottom: 16 }}>
@@ -234,7 +236,10 @@ export default function Shipping() {
               </select>
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
-              <button onClick={() => setModal(null)} style={{ flex: 1, padding: 9, border: '0.5px solid #ddd', borderRadius: 8, fontSize: 13, color: '#666', background: 'transparent', cursor: 'pointer' }}>取消</button>
+              <button onClick={() => setModal(null)}
+                style={{ flex: 1, padding: 9, border: '0.5px solid #ddd', borderRadius: 8, fontSize: 13, color: '#666', background: 'transparent', cursor: 'pointer' }}>
+                取消
+              </button>
               <button onClick={handleEdit} disabled={saving}
                 style={{ flex: 1, padding: 9, background: saving ? '#ccc' : '#06C755', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 500, color: 'white', cursor: 'pointer' }}>
                 {saving ? '儲存中...' : '儲存變更'}
@@ -264,7 +269,10 @@ export default function Shipping() {
               ))}
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
-              <button onClick={() => setModal(null)} style={{ flex: 1, padding: 9, border: '0.5px solid #ddd', borderRadius: 8, fontSize: 13, color: '#666', background: 'transparent', cursor: 'pointer' }}>取消</button>
+              <button onClick={() => setModal(null)}
+                style={{ flex: 1, padding: 9, border: '0.5px solid #ddd', borderRadius: 8, fontSize: 13, color: '#666', background: 'transparent', cursor: 'pointer' }}>
+                取消
+              </button>
               <button onClick={handleDelete} disabled={saving}
                 style={{ flex: 1, padding: 9, background: saving ? '#ccc' : '#E24B4A', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 500, color: 'white', cursor: 'pointer' }}>
                 {saving ? '刪除中...' : '確認刪除'}
