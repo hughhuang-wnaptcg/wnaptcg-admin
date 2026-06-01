@@ -89,7 +89,6 @@ export default function Grading() {
       let image_url = form.image_url
 
       if (editing) {
-        // 先上傳圖片（如果有新圖）
         if (imageFile) {
           image_url = await uploadImage(imageFile, editing)
         }
@@ -106,7 +105,6 @@ export default function Grading() {
         }
         await supabaseAdmin.from('grading_submissions').update(payload).eq('id', editing)
       } else {
-        // 新增：先 insert 拿到 id，再上傳圖片
         const payload = {
           member_id: form.member_id,
           card_name: form.card_name,
@@ -118,8 +116,10 @@ export default function Grading() {
           notes: form.notes || null,
           image_url: null,
         }
-        const { data: inserted } = await supabaseAdmin
+        const { data: inserted, error: insertError } = await supabaseAdmin
           .from('grading_submissions').insert(payload).select().single()
+
+        if (insertError) throw insertError
 
         if (imageFile && inserted) {
           image_url = await uploadImage(imageFile, inserted.id)
@@ -139,7 +139,6 @@ export default function Grading() {
 
   async function handleDelete(id) {
     if (!window.confirm('確定刪除？')) return
-    // 一併刪除 Storage 圖片
     await supabaseAdmin.storage.from('grading-images').remove([`${id}.jpg`, `${id}.jpeg`, `${id}.png`, `${id}.webp`])
     await supabaseAdmin.from('grading_submissions').delete().eq('id', id)
     fetchAll()
@@ -198,4 +197,201 @@ export default function Grading() {
                         </div>
                     }
                   </td>
-                  <td style={{ padding: '12px 12px', fontWeight: 600, color: '#2D1A00', whiteSpace: 'nowrap' }}>{row.members?.di
+                  <td style={{ padding: '12px 12px', fontWeight: 600, color: '#2D1A00', whiteSpace: 'nowrap' }}>{row.members?.display_name || '-'}</td>
+                  <td style={{ padding: '12px 12px', fontWeight: 600, color: '#2D1A00' }}>{row.card_name}</td>
+                  <td style={{ padding: '12px 12px', color: '#7a5c2e', fontSize: 13 }}>{row.card_set || '-'}</td>
+                  <td style={{ padding: '12px 12px', color: '#7a5c2e', fontSize: 13 }}>{row.grading_company || '-'}</td>
+                  <td style={{ padding: '12px 12px', color: '#7a5c2e', fontSize: 13, whiteSpace: 'nowrap' }}>{row.submitted_at || '-'}</td>
+                  <td style={{ padding: '12px 12px' }}>
+                    <span style={{
+                      background: STATUS_LABELS[row.status]?.bg,
+                      color: STATUS_LABELS[row.status]?.color,
+                      borderRadius: 8, padding: '3px 10px', fontSize: 12, fontWeight: 700
+                    }}>
+                      {STATUS_LABELS[row.status]?.label || row.status}
+                    </span>
+                  </td>
+                  <td style={{ padding: '12px 12px', color: '#2D1A00', fontWeight: 700 }}>{row.grade ?? '-'}</td>
+                  <td style={{ padding: '12px 12px', color: '#7a5c2e', fontSize: 13, maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.notes || '-'}</td>
+                  <td style={{ padding: '12px 12px', borderRadius: '0 14px 14px 0', whiteSpace: 'nowrap' }}>
+                    <button onClick={() => openEdit(row)}
+                      style={{ background: '#FFF3E0', color: '#E07B00', border: 'none', borderRadius: 8, padding: '6px 12px', fontWeight: 600, cursor: 'pointer', fontSize: 13, marginRight: 6 }}>
+                      編輯
+                    </button>
+                    <button onClick={() => handleDelete(row.id)}
+                      style={{ background: '#FFF0F0', color: '#E53935', border: 'none', borderRadius: 8, padding: '6px 12px', fontWeight: 600, cursor: 'pointer', fontSize: 13 }}>
+                      刪除
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {filtered.length === 0 && (
+                <tr>
+                  <td colSpan={10} style={{ textAlign: 'center', padding: 32, color: '#aaa' }}>尚無紀錄</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Modal */}
+      {modalOpen && (
+        <div
+          onClick={e => { if (e.target === e.currentTarget) setModalOpen(false) }}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ background: '#FFFBF2', borderRadius: 18, padding: 28, width: '100%', maxWidth: 480, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 8px 32px rgba(186,117,23,.18)' }}>
+            <h3 style={{ fontWeight: 800, color: '#2D1A00', marginBottom: 20, fontSize: 18 }}>
+              {editing ? '編輯鑑定紀錄' : '新增鑑定紀錄'}
+            </h3>
+
+            {/* 圖片上傳 */}
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ fontSize: 13, fontWeight: 700, color: '#BA7517', display: 'block', marginBottom: 8 }}>卡片圖片</label>
+              <div
+                onClick={() => fileInputRef.current?.click()}
+                style={{
+                  width: '100%', height: 160, borderRadius: 12,
+                  border: '2px dashed #F5E8C8', background: '#FFF8EE',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  cursor: 'pointer', overflow: 'hidden'
+                }}>
+                {imagePreview
+                  ? <img src={imagePreview} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                  : <div style={{ textAlign: 'center', color: '#BA7517' }}>
+                      <div style={{ fontSize: 32, marginBottom: 8 }}>📷</div>
+                      <div style={{ fontSize: 13, fontWeight: 600 }}>點擊上傳圖片</div>
+                      <div style={{ fontSize: 11, color: '#aaa', marginTop: 4 }}>JPG / PNG / WEBP</div>
+                    </div>
+                }
+              </div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                style={{ display: 'none' }}
+                onChange={handleImageChange}
+              />
+              {imagePreview && (
+                <button
+                  onClick={() => { setImageFile(null); setImagePreview(null); setForm(f => ({ ...f, image_url: '' })) }}
+                  style={{ marginTop: 6, fontSize: 12, color: '#E07B00', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>
+                  ✕ 移除圖片
+                </button>
+              )}
+            </div>
+
+            {/* 會員 */}
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ fontSize: 13, fontWeight: 700, color: '#BA7517', display: 'block', marginBottom: 6 }}>會員 *</label>
+              <select value={form.member_id} onChange={e => setForm(f => ({ ...f, member_id: e.target.value }))}
+                style={{ width: '100%', borderRadius: 10, border: '1.5px solid #F5E8C8', padding: '9px 12px', background: '#fff', color: '#2D1A00', fontSize: 14 }}>
+                <option value=''>選擇會員</option>
+                {members.map(m => <option key={m.id} value={m.id}>{m.display_name}</option>)}
+              </select>
+            </div>
+
+            {/* 卡片名稱 */}
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ fontSize: 13, fontWeight: 700, color: '#BA7517', display: 'block', marginBottom: 6 }}>卡片名稱 *</label>
+              <input
+                value={form.card_name}
+                onChange={e => setForm(f => ({ ...f, card_name: e.target.value }))}
+                placeholder="例：Charizard ex SAR"
+                style={{ width: '100%', borderRadius: 10, border: '1.5px solid #F5E8C8', padding: '9px 12px', fontSize: 14, boxSizing: 'border-box' }}
+              />
+            </div>
+
+            {/* 系列 & 鑑定公司 */}
+            <div style={{ display: 'flex', gap: 12, marginBottom: 14 }}>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: 13, fontWeight: 700, color: '#BA7517', display: 'block', marginBottom: 6 }}>系列</label>
+                <input
+                  value={form.card_set}
+                  onChange={e => setForm(f => ({ ...f, card_set: e.target.value }))}
+                  placeholder="例：sv8a"
+                  style={{ width: '100%', borderRadius: 10, border: '1.5px solid #F5E8C8', padding: '9px 12px', fontSize: 14, boxSizing: 'border-box' }}
+                />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: 13, fontWeight: 700, color: '#BA7517', display: 'block', marginBottom: 6 }}>鑑定公司</label>
+                <input
+                  value={form.grading_company}
+                  onChange={e => setForm(f => ({ ...f, grading_company: e.target.value }))}
+                  placeholder="例：PSA"
+                  style={{ width: '100%', borderRadius: 10, border: '1.5px solid #F5E8C8', padding: '9px 12px', fontSize: 14, boxSizing: 'border-box' }}
+                />
+              </div>
+            </div>
+
+            {/* 送件日 & 狀態 */}
+            <div style={{ display: 'flex', gap: 12, marginBottom: 14 }}>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: 13, fontWeight: 700, color: '#BA7517', display: 'block', marginBottom: 6 }}>送件日</label>
+                <input
+                  type="date"
+                  value={form.submitted_at}
+                  onChange={e => setForm(f => ({ ...f, submitted_at: e.target.value }))}
+                  style={{ width: '100%', borderRadius: 10, border: '1.5px solid #F5E8C8', padding: '9px 12px', fontSize: 14, boxSizing: 'border-box' }}
+                />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: 13, fontWeight: 700, color: '#BA7517', display: 'block', marginBottom: 6 }}>狀態</label>
+                <select
+                  value={form.status}
+                  onChange={e => setForm(f => ({ ...f, status: e.target.value }))}
+                  style={{ width: '100%', borderRadius: 10, border: '1.5px solid #F5E8C8', padding: '9px 12px', background: '#fff', color: '#2D1A00', fontSize: 14 }}>
+                  {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                </select>
+              </div>
+            </div>
+
+            {/* 分數 & 備註 */}
+            <div style={{ display: 'flex', gap: 12, marginBottom: 20 }}>
+              <div style={{ width: 100 }}>
+                <label style={{ fontSize: 13, fontWeight: 700, color: '#BA7517', display: 'block', marginBottom: 6 }}>分數</label>
+                <input
+                  type="number"
+                  value={form.grade}
+                  onChange={e => setForm(f => ({ ...f, grade: e.target.value }))}
+                  placeholder="10"
+                  style={{ width: '100%', borderRadius: 10, border: '1.5px solid #F5E8C8', padding: '9px 12px', fontSize: 14, boxSizing: 'border-box' }}
+                />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: 13, fontWeight: 700, color: '#BA7517', display: 'block', marginBottom: 6 }}>備註</label>
+                <input
+                  value={form.notes}
+                  onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
+                  placeholder="備註..."
+                  style={{ width: '100%', borderRadius: 10, border: '1.5px solid #F5E8C8', padding: '9px 12px', fontSize: 14, boxSizing: 'border-box' }}
+                />
+              </div>
+            </div>
+
+            {/* 按鈕 */}
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => setModalOpen(false)}
+                style={{ borderRadius: 10, border: '1.5px solid #F5E8C8', background: '#fff', color: '#2D1A00', padding: '10px 20px', fontWeight: 600, cursor: 'pointer', fontSize: 14 }}>
+                取消
+              </button>
+              <button
+                onClick={handleSave}
+                disabled={uploading || !form.member_id || !form.card_name}
+                style={{
+                  borderRadius: 10, border: 'none',
+                  background: (uploading || !form.member_id || !form.card_name) ? '#ccc' : 'linear-gradient(135deg,#BA7517,#D4A94A)',
+                  color: '#fff', padding: '10px 24px', fontWeight: 700,
+                  cursor: (uploading || !form.member_id || !form.card_name) ? 'not-allowed' : 'pointer',
+                  fontSize: 14
+                }}>
+                {uploading ? '儲存中…' : '儲存'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
