@@ -7,7 +7,8 @@ export default function AdminCards() {
   const [cards, setCards] = useState([])
   const [members, setMembers] = useState([])
   const [modal, setModal] = useState(null)
-  const [form, setForm] = useState({ name: '', rarity: 'UR', series: '', episode: '', image_url: '', ownerIds: [] })
+  // ownerEntries: [{ member_id, created_at }]
+  const [form, setForm] = useState({ name: '', rarity: 'UR', series: '', episode: '', image_url: '', ownerEntries: [] })
   const [uploading, setUploading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [preview, setPreview] = useState(null)
@@ -17,7 +18,7 @@ export default function AdminCards() {
 
   async function fetchData() {
     const [{ data: cardsData }, { data: membersData }] = await Promise.all([
-      supabase.from('cards').select('*, card_owners(member_id, members(display_name))').order('created_at', { ascending: false }),
+      supabase.from('cards').select('*, card_owners(member_id, created_at, members(display_name))').order('created_at', { ascending: false }),
       supabase.from('members').select('id, display_name').order('display_name'),
     ])
     setCards(cardsData || [])
@@ -27,11 +28,9 @@ export default function AdminCards() {
   async function handleUpload(e) {
     const file = e.target.files[0]
     if (!file) return
-    // 先顯示預覽
     const reader = new FileReader()
     reader.onload = (ev) => setPreview(ev.target.result)
     reader.readAsDataURL(file)
-
     setUploading(true)
     try {
       const ext = file.name.split('.').pop()
@@ -51,16 +50,31 @@ export default function AdminCards() {
     if (!form.name || !form.series) return
     setSaving(true)
     try {
+      const ownerRows = form.ownerEntries.map(e => ({
+        card_id: null, // 填入後再設
+        member_id: e.member_id,
+        created_at: e.created_at || new Date().toISOString(),
+      }))
+
       if (modal === 'new') {
-        const { data: newCard } = await supabase.from('cards').insert({ name: form.name, rarity: form.rarity, series: form.series, episode: form.episode, image_url: form.image_url }).select().single()
-        if (newCard && form.ownerIds.length > 0) {
-          await supabase.from('card_owners').insert(form.ownerIds.map(id => ({ card_id: newCard.id, member_id: id })))
+        const { data: newCard } = await supabase.from('cards')
+          .insert({ name: form.name, rarity: form.rarity, series: form.series, episode: form.episode, image_url: form.image_url })
+          .select().single()
+        if (newCard && ownerRows.length > 0) {
+          await supabase.from('card_owners').insert(
+            ownerRows.map(r => ({ ...r, card_id: newCard.id }))
+          )
         }
       } else {
-        await supabase.from('cards').update({ name: form.name, rarity: form.rarity, series: form.series, episode: form.episode, image_url: form.image_url }).eq('id', modal.id)
+        await supabase.from('cards').update({
+          name: form.name, rarity: form.rarity, series: form.series,
+          episode: form.episode, image_url: form.image_url
+        }).eq('id', modal.id)
         await supabase.from('card_owners').delete().eq('card_id', modal.id)
-        if (form.ownerIds.length > 0) {
-          await supabase.from('card_owners').insert(form.ownerIds.map(id => ({ card_id: modal.id, member_id: id })))
+        if (ownerRows.length > 0) {
+          await supabase.from('card_owners').insert(
+            ownerRows.map(r => ({ ...r, card_id: modal.id }))
+          )
         }
       }
       await fetchData()
@@ -79,15 +93,41 @@ export default function AdminCards() {
   }
 
   function openNew() {
-    setForm({ name: '', rarity: 'UR', series: '', episode: '', image_url: '', ownerIds: [] })
+    setForm({ name: '', rarity: 'UR', series: '', episode: '', image_url: '', ownerEntries: [] })
     setPreview(null)
     setModal('new')
   }
 
   function openEdit(card) {
-    setForm({ name: card.name, rarity: card.rarity, series: card.series, episode: card.episode || '', image_url: card.image_url || '', ownerIds: card.card_owners?.map(o => o.member_id) || [] })
+    setForm({
+      name: card.name,
+      rarity: card.rarity,
+      series: card.series,
+      episode: card.episode || '',
+      image_url: card.image_url || '',
+      ownerEntries: card.card_owners?.map(o => ({
+        member_id: o.member_id,
+        created_at: o.created_at ? o.created_at.slice(0, 10) : '',
+      })) || []
+    })
     setPreview(card.image_url || null)
     setModal(card)
+  }
+
+  function addOwner(memberId) {
+    if (!memberId || form.ownerEntries.find(e => e.member_id === memberId)) return
+    setForm(f => ({ ...f, ownerEntries: [...f.ownerEntries, { member_id: memberId, created_at: '' }] }))
+  }
+
+  function removeOwner(memberId) {
+    setForm(f => ({ ...f, ownerEntries: f.ownerEntries.filter(e => e.member_id !== memberId) }))
+  }
+
+  function updateOwnerDate(memberId, date) {
+    setForm(f => ({
+      ...f,
+      ownerEntries: f.ownerEntries.map(e => e.member_id === memberId ? { ...e, created_at: date } : e)
+    }))
   }
 
   return (
@@ -128,7 +168,8 @@ export default function AdminCards() {
                   <td style={{ padding: '10px 14px' }}>
                     <div style={{ display: 'flex' }}>
                       {card.card_owners?.map((o, i) => (
-                        <div key={o.member_id} style={{ width: 22, height: 22, borderRadius: '50%', background: '#FAEEDA', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 600, color: '#633806', border: '1.5px solid #fff', marginLeft: i > 0 ? -6 : 0 }} title={o.members?.display_name}>
+                        <div key={o.member_id} title={`${o.members?.display_name}${o.created_at ? ' · ' + new Date(o.created_at).toLocaleDateString('zh-TW') : ''}`}
+                          style={{ width: 22, height: 22, borderRadius: '50%', background: '#FAEEDA', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 600, color: '#633806', border: '1.5px solid #fff', marginLeft: i > 0 ? -6 : 0 }}>
                           {o.members?.display_name?.[0]}
                         </div>
                       ))}
@@ -149,7 +190,7 @@ export default function AdminCards() {
 
       {modal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
-          <div style={{ background: '#fff', border: '0.5px solid #e5e5e5', borderRadius: 12, width: 360, padding: 20, maxHeight: '90vh', overflowY: 'auto' }}>
+          <div style={{ background: '#fff', border: '0.5px solid #e5e5e5', borderRadius: 12, width: 380, padding: 20, maxHeight: '90vh', overflowY: 'auto' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
               <div style={{ fontSize: 15, fontWeight: 500, color: '#111' }}>{modal === 'new' ? '新增卡牌' : '編輯卡牌'}</div>
               <span style={{ fontSize: 18, cursor: 'pointer', color: '#aaa' }} onClick={() => { setModal(null); setPreview(null) }}>✕</span>
@@ -180,7 +221,7 @@ export default function AdminCards() {
             <div style={{ marginBottom: 12 }}>
               <label style={{ fontSize: 11, color: '#999', display: 'block', marginBottom: 4 }}>卡牌名稱</label>
               <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="例：Charizard ex"
-                style={{ width: '100%', padding: '8px 10px', border: '0.5px solid #ddd', borderRadius: 7, fontSize: 13, color: '#111', outline: 'none' }} />
+                style={{ width: '100%', padding: '8px 10px', border: '0.5px solid #ddd', borderRadius: 7, fontSize: 13, color: '#111', outline: 'none', boxSizing: 'border-box' }} />
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
               <div>
@@ -193,40 +234,52 @@ export default function AdminCards() {
               <div>
                 <label style={{ fontSize: 11, color: '#999', display: 'block', marginBottom: 4 }}>直播場次</label>
                 <input value={form.episode} onChange={e => setForm({ ...form, episode: e.target.value })} placeholder="EP.47"
-                  style={{ width: '100%', padding: '8px 10px', border: '0.5px solid #ddd', borderRadius: 7, fontSize: 13, color: '#111', outline: 'none' }} />
+                  style={{ width: '100%', padding: '8px 10px', border: '0.5px solid #ddd', borderRadius: 7, fontSize: 13, color: '#111', outline: 'none', boxSizing: 'border-box' }} />
               </div>
             </div>
             <div style={{ marginBottom: 12 }}>
               <label style={{ fontSize: 11, color: '#999', display: 'block', marginBottom: 4 }}>系列名稱</label>
               <input value={form.series} onChange={e => setForm({ ...form, series: e.target.value })} placeholder="例：Obsidian Flames"
-                style={{ width: '100%', padding: '8px 10px', border: '0.5px solid #ddd', borderRadius: 7, fontSize: 13, color: '#111', outline: 'none' }} />
+                style={{ width: '100%', padding: '8px 10px', border: '0.5px solid #ddd', borderRadius: 7, fontSize: 13, color: '#111', outline: 'none', boxSizing: 'border-box' }} />
             </div>
+
+            {/* 開卡會員 + 獲得日期 */}
             <div style={{ marginBottom: 16 }}>
-              <label style={{ fontSize: 11, color: '#999', display: 'block', marginBottom: 4 }}>開卡會員（可多選）</label>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 6 }}>
-                {form.ownerIds.map(id => {
-                  const m = members.find(x => x.id === id)
-                  return (
-                    <div key={id} style={{ display: 'flex', alignItems: 'center', gap: 4, background: '#E6F1FB', color: '#0C447C', fontSize: 11, padding: '3px 8px', borderRadius: 20 }}>
-                      {m?.display_name}
-                      <span style={{ cursor: 'pointer' }} onClick={() => setForm(f => ({ ...f, ownerIds: f.ownerIds.filter(x => x !== id) }))}>✕</span>
-                    </div>
-                  )
-                })}
-              </div>
+              <label style={{ fontSize: 11, color: '#999', display: 'block', marginBottom: 8 }}>開卡會員（可多選）</label>
+
+              {form.ownerEntries.length > 0 && (
+                <div style={{ marginBottom: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {form.ownerEntries.map(entry => {
+                    const m = members.find(x => x.id === entry.member_id)
+                    return (
+                      <div key={entry.member_id} style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#f8f8f8', borderRadius: 8, padding: '6px 10px', border: '0.5px solid #eee' }}>
+                        <div style={{ fontSize: 12, fontWeight: 500, color: '#333', flex: 1 }}>{m?.display_name}</div>
+                        <input
+                          type="date"
+                          value={entry.created_at}
+                          onChange={e => updateOwnerDate(entry.member_id, e.target.value)}
+                          style={{ fontSize: 11, border: '0.5px solid #ddd', borderRadius: 6, padding: '3px 6px', color: '#666', background: '#fff' }}
+                        />
+                        <span onClick={() => removeOwner(entry.member_id)}
+                          style={{ fontSize: 14, color: '#bbb', cursor: 'pointer', lineHeight: 1 }}>✕</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+
               <select
                 value=""
-                onChange={e => {
-                  const val = e.target.value
-                  if (val && !form.ownerIds.includes(val)) {
-                    setForm(f => ({ ...f, ownerIds: [...f.ownerIds, val] }))
-                  }
-                }}
+                onChange={e => { addOwner(e.target.value) }}
                 style={{ width: '100%', padding: '8px 10px', border: '0.5px solid #ddd', borderRadius: 7, fontSize: 13, background: '#fff', color: '#111' }}>
                 <option value="">＋ 新增會員...</option>
-                {members.filter(m => !form.ownerIds.includes(m.id)).map(m => <option key={m.id} value={m.id}>{m.display_name}</option>)}
+                {members.filter(m => !form.ownerEntries.find(e => e.member_id === m.id)).map(m => (
+                  <option key={m.id} value={m.id}>{m.display_name}</option>
+                ))}
               </select>
+              <div style={{ fontSize: 10, color: '#bbb', marginTop: 4 }}>日期留空則自動填入今天</div>
             </div>
+
             <div style={{ display: 'flex', gap: 8 }}>
               <button onClick={() => { setModal(null); setPreview(null) }} style={{ flex: 1, padding: 9, border: '0.5px solid #ddd', borderRadius: 8, fontSize: 13, color: '#666', background: 'transparent', cursor: 'pointer' }}>取消</button>
               <button onClick={handleSave} disabled={saving || uploading}
