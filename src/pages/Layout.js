@@ -9,6 +9,7 @@ const NAV = [
   { path: '/shipping', label: '出貨管理', icon: 'fa-truck' },
   { path: '/cards', label: '戰績牆', icon: 'fa-trophy' },
   { path: '/boss', label: 'Boss 管理', icon: 'fa-shield' },
+  { path: '/grading', label: '鑑定管理', icon: 'fa-medal' },
   { path: '/settings', label: '系統設定', icon: 'fa-gear' },
 ]
 
