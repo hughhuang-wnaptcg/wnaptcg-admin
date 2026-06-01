@@ -11,6 +11,7 @@ import Cards from './pages/Cards'
 import Boss from './pages/Boss'
 import Settings from './pages/Settings'
 import Grading from './pages/Grading'
+import Shop from './pages/Shop'
 
 function PrivateRoute({ children, admin, loading }) {
   if (loading) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', fontSize: 14, color: '#888' }}>載入中...</div>
@@ -51,6 +52,7 @@ export default function App() {
           <Route path="cards" element={<Cards />} />
           <Route path="boss" element={<Boss />} />
           <Route path="grading" element={<Grading />} />
+          <Route path="shop" element={<Shop />} />
           <Route path="settings" element={<Settings />} />
         </Route>
       </Routes>
