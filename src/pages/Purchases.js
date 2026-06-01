@@ -8,20 +8,21 @@ export default function Purchases() {
   const [search, setSearch] = useState('')
   const [memberFilter, setMemberFilter] = useState('')
   const [loading, setLoading] = useState(true)
-  const [modal, setModal] = useState(null)   // 'add' | { mode:'edit', log } | { mode:'delete', log }
+  const [modal, setModal] = useState(null)
   const [form, setForm] = useState({ member_id: '', amount: '', note: '' })
   const [saving, setSaving] = useState(false)
   const [ratio, setRatio] = useState(1)
+  const SHOP_POINTS_RATIO = 100 // 每消費 100 元得 1 點
 
   useEffect(() => { fetchAll() }, [])
 
   async function fetchAll() {
     const [{ data: logsData }, { data: membersData }, { data: settingData }] = await Promise.all([
       supabase.from('point_logs')
-        .select('*, members(display_name, level, avatar_url, points, total_spent)')
+        .select('*, members(display_name, level, avatar_url, points, total_spent, shop_points)')
         .eq('type', 'purchase')
         .order('created_at', { ascending: false }),
-      supabase.from('members').select('id, display_name, avatar_url, level, points, total_spent').order('display_name'),
+      supabase.from('members').select('id, display_name, avatar_url, level, points, total_spent, shop_points').order('display_name'),
       supabase.from('settings').select('value').eq('key', 'points_purchase_ratio').single(),
     ])
     setLogs(logsData || [])
@@ -73,20 +74,41 @@ export default function Purchases() {
     if (!member) { setSaving(false); return }
     const amount = parseFloat(form.amount)
     const earnedPoints = Math.floor(amount * ratio)
+    const earnedShopPoints = Math.floor(amount / SHOP_POINTS_RATIO)
+
+    // 更新 members：積分 + shop_points
     await supabase.from('members').update({
       total_spent: (member.total_spent || 0) + amount,
       points: member.points + earnedPoints,
       level: getLevel(member.points + earnedPoints),
+      shop_points: (member.shop_points || 0) + earnedShopPoints,
     }).eq('id', form.member_id)
+
+    // 積分紀錄
     await supabase.from('point_logs').insert({
-      member_id: form.member_id, type: 'purchase', points: earnedPoints,
+      member_id: form.member_id,
+      type: 'purchase',
+      points: earnedPoints,
       note: form.note ? `消費 $${amount}｜${form.note}` : `消費 $${amount}`,
     })
+
+    // 點數紀錄（shop points）
+    if (earnedShopPoints > 0) {
+      await supabase.from('points_logs').insert({
+        member_id: form.member_id,
+        type: 'purchase',
+        points: earnedShopPoints,
+        note: form.note ? `消費 $${amount} 獲得點數｜${form.note}` : `消費 $${amount} 獲得點數`,
+      })
+    }
+
+    // Boss 挑戰
     const { data: bossData } = await supabase.from('boss_challenges').select('id, current_amount').eq('is_active', true).single()
     if (bossData) {
       await supabase.from('boss_purchases').insert({ boss_id: bossData.id, member_id: form.member_id, amount, note: form.note || '', purchase_date: new Date().toISOString().split('T')[0] })
       await supabase.from('boss_challenges').update({ current_amount: bossData.current_amount + amount }).eq('id', bossData.id)
     }
+
     await fetchAll()
     setModal(null)
     setSaving(false)
@@ -102,6 +124,9 @@ export default function Purchases() {
     const oldPoints = log.points || 0
     const newAmount = parseFloat(form.amount)
     const newPoints = Math.floor(newAmount * ratio)
+    const oldShopPoints = Math.floor(oldAmount / SHOP_POINTS_RATIO)
+    const newShopPoints = Math.floor(newAmount / SHOP_POINTS_RATIO)
+    const diffShopPoints = newShopPoints - oldShopPoints
 
     const member = members.find(m => m.id === log.member_id)
     if (member) {
@@ -109,11 +134,23 @@ export default function Purchases() {
       const diffPoints = newPoints - oldPoints
       const newTotalSpent = Math.max(0, (member.total_spent || 0) + diffAmount)
       const newTotalPoints = Math.max(0, member.points + diffPoints)
+      const newMemberShopPoints = Math.max(0, (member.shop_points || 0) + diffShopPoints)
       await supabase.from('members').update({
         total_spent: newTotalSpent,
         points: newTotalPoints,
         level: getLevel(newTotalPoints),
+        shop_points: newMemberShopPoints,
       }).eq('id', log.member_id)
+
+      // 點數差額紀錄
+      if (diffShopPoints !== 0) {
+        await supabase.from('points_logs').insert({
+          member_id: log.member_id,
+          type: 'manual',
+          points: diffShopPoints,
+          note: `消費記錄編輯：點數調整 ${diffShopPoints > 0 ? '+' : ''}${diffShopPoints}`,
+        })
+      }
     }
 
     await supabase.from('point_logs').update({
@@ -134,10 +171,33 @@ export default function Purchases() {
     if (member) {
       const { amount: amtStr } = parseLog(log)
       const amount = amtStr ? parseFloat(amtStr.replace(',','')) : 0
+      const shopPointsToDeduct = Math.floor(amount / SHOP_POINTS_RATIO)
       const newTotalSpent = Math.max(0, (member.total_spent || 0) - amount)
       const newPoints = Math.max(0, member.points - log.points)
-      await supabase.from('members').update({ total_spent: newTotalSpent, points: newPoints, level: getLevel(newPoints) }).eq('id', log.member_id)
-      await supabase.from('point_logs').insert({ member_id: log.member_id, type: 'manual', points: -log.points, note: `消費記錄刪除｜${log.note || ''}` })
+      const newShopPoints = Math.max(0, (member.shop_points || 0) - shopPointsToDeduct)
+
+      await supabase.from('members').update({
+        total_spent: newTotalSpent,
+        points: newPoints,
+        level: getLevel(newPoints),
+        shop_points: newShopPoints,
+      }).eq('id', log.member_id)
+
+      await supabase.from('point_logs').insert({
+        member_id: log.member_id,
+        type: 'manual',
+        points: -log.points,
+        note: `消費記錄刪除｜${log.note || ''}`,
+      })
+
+      if (shopPointsToDeduct > 0) {
+        await supabase.from('points_logs').insert({
+          member_id: log.member_id,
+          type: 'manual',
+          points: -shopPointsToDeduct,
+          note: `消費記錄刪除，扣回點數｜${log.note || ''}`,
+        })
+      }
     }
     await supabase.from('point_logs').delete().eq('id', log.id)
     await fetchAll()
@@ -147,8 +207,8 @@ export default function Purchases() {
 
   const inp = { width: '100%', padding: '8px 10px', border: '0.5px solid #ddd', borderRadius: 7, fontSize: 13, color: '#111', outline: 'none', boxSizing: 'border-box', background: '#fff' }
 
-  // 預覽積分（新增/編輯共用）
   const previewPoints = form.amount ? Math.floor(parseFloat(form.amount || 0) * ratio) : 0
+  const previewShopPoints = form.amount ? Math.floor(parseFloat(form.amount || 0) / SHOP_POINTS_RATIO) : 0
   const previewMember = members.find(m => m.id === form.member_id)
   const isEdit = modal != null && typeof modal === 'object' && modal.mode === 'edit'
   const editLog = isEdit ? modal.log : null
@@ -157,7 +217,6 @@ export default function Purchases() {
 
   return (
     <div style={{ padding: 24 }}>
-      {/* 標題列 */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
         <div style={{ fontSize: 20, fontWeight: 500, color: '#111' }}>消費記錄</div>
         <button onClick={openAdd} style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#06C755', color: 'white', border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>
@@ -201,19 +260,20 @@ export default function Purchases() {
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
             <tr style={{ borderBottom: '0.5px solid #e5e5e5', background: '#f8f8f8' }}>
-              {['會員', '消費金額', '獲得積分', '備註', '日期', '操作'].map(h => (
+              {['會員', '消費金額', '獲得積分', '獲得點數', '備註', '日期', '操作'].map(h => (
                 <th key={h} style={{ padding: '10px 14px', textAlign: 'left', fontSize: 11, fontWeight: 500, color: '#999' }}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={6} style={{ textAlign: 'center', padding: 40, color: '#aaa' }}>載入中...</td></tr>
+              <tr><td colSpan={7} style={{ textAlign: 'center', padding: 40, color: '#aaa' }}>載入中...</td></tr>
             ) : filtered.length === 0 ? (
-              <tr><td colSpan={6} style={{ textAlign: 'center', padding: 40, color: '#aaa' }}>尚無消費記錄</td></tr>
+              <tr><td colSpan={7} style={{ textAlign: 'center', padding: 40, color: '#aaa' }}>尚無消費記錄</td></tr>
             ) : filtered.map(log => {
               const { amount, remark } = parseLog(log)
               const m = log.members
+              const shopPts = amount ? Math.floor(parseFloat(amount.replace(',','')) / SHOP_POINTS_RATIO) : 0
               return (
                 <tr key={log.id} style={{ borderBottom: '0.5px solid #f0f0f0' }}>
                   <td style={{ padding: '10px 14px' }}>
@@ -232,7 +292,13 @@ export default function Purchases() {
                   <td style={{ padding: '10px 14px' }}>
                     <span style={{ fontSize: 12, background: '#FAEEDA', color: '#8B5A00', padding: '2px 8px', borderRadius: 20, fontWeight: 500 }}>+{log.points} 點</span>
                   </td>
-                  <td style={{ padding: '10px 14px', color: '#666', maxWidth: 200 }}>
+                  <td style={{ padding: '10px 14px' }}>
+                    {shopPts > 0
+                      ? <span style={{ fontSize: 12, background: '#FFF3E0', color: '#E07B00', padding: '2px 8px', borderRadius: 20, fontWeight: 500 }}>+{shopPts} 點</span>
+                      : <span style={{ fontSize: 12, color: '#ccc' }}>—</span>
+                    }
+                  </td>
+                  <td style={{ padding: '10px 14px', color: '#666', maxWidth: 160 }}>
                     <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{remark || '—'}</div>
                   </td>
                   <td style={{ padding: '10px 14px', color: '#999' }}>{new Date(log.created_at).toLocaleDateString('zh-TW')}</td>
@@ -253,20 +319,21 @@ export default function Purchases() {
             })}
           </tbody>
         </table>
-        <div style={{ padding: '10px 14px', fontSize: 12, color: '#999', borderTop: '0.5px solid #f0f0f0' }}>共 {filtered.length} 筆記錄</div>
+        <div style={{ padding: '10px 14px', fontSize: 12, color: '#999', borderTop: '0.5px solid #f0f0f0' }}>
+          共 {filtered.length} 筆記錄 · 積分比例 $1 = {ratio} 積分 · 點數比例 $100 = 1 點
+        </div>
       </div>
 
-      {/* ── 新增 / 編輯 彈窗（共用）── */}
+      {/* 新增 / 編輯 彈窗 */}
       {(modal === 'add' || modal?.mode === 'edit') && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
-          <div style={{ background: '#fff', borderRadius: 12, width: 360, padding: 20 }}>
+          <div style={{ background: '#fff', borderRadius: 12, width: 380, padding: 20 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
               <div style={{ fontSize: 15, fontWeight: 500, color: '#111' }}>{isEdit ? '編輯消費記錄' : '新增消費記錄'}</div>
               <span style={{ fontSize: 18, cursor: 'pointer', color: '#aaa' }} onClick={() => setModal(null)}>✕</span>
             </div>
-            <div style={{ fontSize: 12, color: '#999', marginBottom: 16 }}>積分比例 $1 = {ratio} 點</div>
+            <div style={{ fontSize: 12, color: '#999', marginBottom: 16 }}>積分比例 $1 = {ratio} 積分 · 點數比例 $100 = 1 點</div>
 
-            {/* 編輯時顯示會員，新增時可選 */}
             {isEdit ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', background: '#f8f8f8', borderRadius: 8, marginBottom: 12 }}>
                 {editLog?.members?.avatar_url
@@ -298,21 +365,21 @@ export default function Purchases() {
             {/* 預覽 */}
             {form.amount && parseFloat(form.amount) > 0 && (isEdit || form.member_id) && (
               <div style={{ background: 'linear-gradient(135deg,#f8fff8,#f0fdf4)', border: '0.5px solid #86efac', borderRadius: 8, padding: '10px 12px', marginBottom: 14 }}>
-                <div style={{ fontSize: 11, color: '#166534', fontWeight: 500, marginBottom: 6 }}>
+                <div style={{ fontSize: 11, color: '#166534', fontWeight: 500, marginBottom: 8 }}>
                   <i className="fa-solid fa-circle-check" style={{ marginRight: 5 }}></i>
                   {isEdit ? '編輯預覽（差額）' : '消費預覽'}
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
                   {(isEdit ? [
                     { label: '消費金額', value: `$${parseFloat(form.amount).toLocaleString()}` },
-                    { label: '積分變化', value: `${previewPoints >= oldPoints ? '+' : ''}${previewPoints - oldPoints} 點` },
-                    { label: '金額差額', value: `${parseFloat(form.amount) >= oldAmount ? '+' : ''}$${(parseFloat(form.amount) - oldAmount).toLocaleString()}` },
-                    { label: '新獲得積分', value: `${previewPoints} 點` },
+                    { label: '積分變化', value: `${previewPoints >= oldPoints ? '+' : ''}${previewPoints - oldPoints} 積分` },
+                    { label: '新獲得積分', value: `${previewPoints} 積分` },
+                    { label: '商城點數變化', value: `${Math.floor(parseFloat(form.amount)/SHOP_POINTS_RATIO) - Math.floor(oldAmount/SHOP_POINTS_RATIO) >= 0 ? '+' : ''}${Math.floor(parseFloat(form.amount)/SHOP_POINTS_RATIO) - Math.floor(oldAmount/SHOP_POINTS_RATIO)} 點` },
                   ] : [
                     { label: '消費金額', value: `$${parseFloat(form.amount).toLocaleString()}` },
-                    { label: '獲得積分', value: `+${previewPoints} 點` },
-                    { label: '新累積消費', value: `$${((previewMember?.total_spent||0)+parseFloat(form.amount)).toLocaleString()}` },
-                    { label: '新積分總計', value: `${((previewMember?.points||0)+previewPoints).toLocaleString()} 點` },
+                    { label: '獲得積分', value: `+${previewPoints} 積分` },
+                    { label: '獲得商城點數', value: `+${previewShopPoints} 點` },
+                    { label: '新積分總計', value: `${((previewMember?.points||0)+previewPoints).toLocaleString()} 積分` },
                   ]).map(r => (
                     <div key={r.label} style={{ background: 'rgba(255,255,255,0.7)', borderRadius: 6, padding: '6px 8px' }}>
                       <div style={{ fontSize: 10, color: '#666', marginBottom: 2 }}>{r.label}</div>
@@ -327,7 +394,7 @@ export default function Purchases() {
               <button onClick={() => setModal(null)} style={{ flex: 1, padding: 9, border: '0.5px solid #ddd', borderRadius: 8, fontSize: 13, color: '#666', background: 'transparent', cursor: 'pointer' }}>取消</button>
               <button onClick={isEdit ? handleEdit : handleAdd}
                 disabled={saving || (!isEdit && !form.member_id) || !form.amount || parseFloat(form.amount) <= 0}
-                style={{ flex: 1, padding: 9, background: saving||(!isEdit&&!form.member_id)||!form.amount ? '#ccc' : '#06C755', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 500, color: 'white', cursor: 'pointer' }}>
+                style={{ flex: 1, padding: 9, background: saving || (!isEdit && !form.member_id) || !form.amount ? '#ccc' : '#06C755', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 500, color: 'white', cursor: 'pointer' }}>
                 {saving ? '處理中...' : isEdit ? '儲存變更' : '確認新增'}
               </button>
             </div>
@@ -335,27 +402,33 @@ export default function Purchases() {
         </div>
       )}
 
-      {/* ── 刪除確認彈窗 ── */}
+      {/* 刪除確認彈窗 */}
       {modal?.mode === 'delete' && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div style={{ background: '#fff', borderRadius: 12, width: 340, padding: 20 }}>
             <div style={{ fontSize: 15, fontWeight: 500, color: '#111', marginBottom: 6 }}>確認刪除消費記錄？</div>
-            <div style={{ fontSize: 12, color: '#999', marginBottom: 16 }}>此操作不可復原，同時會扣回對應積分</div>
+            <div style={{ fontSize: 12, color: '#999', marginBottom: 16 }}>此操作不可復原，同時會扣回積分與商城點數</div>
             <div style={{ background: '#f8f8f8', borderRadius: 8, padding: '10px 12px', marginBottom: 10 }}>
-              {[
-                { label: '會員', value: editLog?.members?.display_name },
-                { label: '消費金額', value: (() => { const { amount } = parseLog(modal.log); return amount ? `$${amount}` : '—' })() },
-                { label: '備註', value: parseLog(modal.log).remark || '—' },
-              ].map(r => (
-                <div key={r.label} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
-                  <span style={{ fontSize: 12, color: '#888' }}>{r.label}</span>
-                  <span style={{ fontSize: 12, fontWeight: 500, color: '#111' }}>{r.value}</span>
-                </div>
-              ))}
+              {(() => {
+                const { amount, remark } = parseLog(modal.log)
+                const shopPts = amount ? Math.floor(parseFloat(amount.replace(',','')) / SHOP_POINTS_RATIO) : 0
+                return [
+                  { label: '會員', value: modal.log.members?.display_name },
+                  { label: '消費金額', value: amount ? `$${amount}` : '—' },
+                  { label: '備註', value: remark || '—' },
+                  { label: '扣回積分', value: `${modal.log.points} 積分` },
+                  { label: '扣回點數', value: shopPts > 0 ? `${shopPts} 點` : '—' },
+                ].map(r => (
+                  <div key={r.label} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
+                    <span style={{ fontSize: 12, color: '#888' }}>{r.label}</span>
+                    <span style={{ fontSize: 12, fontWeight: 500, color: '#111' }}>{r.value}</span>
+                  </div>
+                ))
+              })()}
             </div>
             <div style={{ background: '#FCEBEB', border: '0.5px solid #F09595', borderRadius: 8, padding: '8px 12px', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 7 }}>
               <i className="fa-solid fa-triangle-exclamation" style={{ fontSize: 13, color: '#A32D2D' }}></i>
-              <div style={{ fontSize: 12, color: '#A32D2D' }}>將扣回 <strong>{editLog?.points} 點</strong>積分，累積消費同步減少</div>
+              <div style={{ fontSize: 12, color: '#A32D2D' }}>積分與商城點數將同步扣回，此操作不可復原</div>
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
               <button onClick={() => setModal(null)} style={{ flex: 1, padding: 9, border: '0.5px solid #ddd', borderRadius: 8, fontSize: 13, color: '#666', background: 'transparent', cursor: 'pointer' }}>取消</button>
