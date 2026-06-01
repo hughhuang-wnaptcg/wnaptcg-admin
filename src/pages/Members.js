@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { LevelBadge } from '../lib/pokeballs'
-import { supabase, supabaseAdmin, getLevel } from '../lib/supabase'
+import { supabase, getLevel } from '../lib/supabase'
 
 export default function AdminMembers() {
   const [members, setMembers] = useState([])
@@ -51,16 +51,14 @@ export default function AdminMembers() {
     setSaving(true)
     const uid = modal.member.id
     try {
-      await supabase.from('point_logs').delete().eq('member_id', uid)
-      await supabase.from('daily_logins').delete().eq('member_id', uid)
-      await supabase.from('boss_purchases').delete().eq('member_id', uid)
-      await supabase.from('members').delete().eq('id', uid)
-      await supabaseAdmin.auth.admin.deleteUser(uid)
+      const { error } = await supabase.functions.invoke('delete-member', { body: { userId: uid } })
+      if (error) throw error
       await fetchMembers()
       setModal(null)
       setDeleteConfirmName('')
     } catch (err) {
       console.error('刪除失敗', err)
+      alert('刪除失敗：' + err.message)
     }
     setSaving(false)
   }

@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react'
-import { supabaseAdmin } from '../lib/supabase'
+import { supabase } from '../lib/supabase'
 
 const TIER_OPTIONS = [
   { value: 'general', label: '一般商城', icon: 'fa-store', color: '#E07B00', bg: '#FFF3E0' },
@@ -28,9 +28,9 @@ export default function Shop() {
   async function fetchAll() {
     setLoading(true)
     const [{ data: prods }, { data: mems }, { data: ords }] = await Promise.all([
-      supabaseAdmin.from('shop_products').select('*').order('created_at', { ascending: false }),
-      supabaseAdmin.from('members').select('id, display_name, shop_points, level').order('display_name'),
-      supabaseAdmin.from('shop_orders').select('*, members(display_name)').order('created_at', { ascending: false }).limit(100),
+      supabase.from('shop_products').select('*').order('created_at', { ascending: false }),
+      supabase.from('members').select('id, display_name, shop_points, level').order('display_name'),
+      supabase.from('shop_orders').select('*, members(display_name)').order('created_at', { ascending: false }).limit(100),
     ])
     setProducts(prods || [])
     setMembers(mems || [])
@@ -48,9 +48,9 @@ export default function Shop() {
     try {
       const ext = file.name.split('.').pop()
       const path = `shop/${Date.now()}.${ext}`
-      const { error } = await supabaseAdmin.storage.from('shop-images').upload(path, file, { upsert: false })
+      const { error } = await supabase.storage.from('shop-images').upload(path, file, { upsert: false })
       if (error) throw error
-      const { data } = supabaseAdmin.storage.from('shop-images').getPublicUrl(path)
+      const { data } = supabase.storage.from('shop-images').getPublicUrl(path)
       setForm(f => ({ ...f, image_url: data.publicUrl }))
     } catch (err) { alert('圖片上傳失敗：' + err.message); setPreview(null) }
     setUploading(false)
@@ -69,9 +69,9 @@ export default function Shop() {
       image_url: form.image_url || null,
     }
     if (modal === 'new') {
-      await supabaseAdmin.from('shop_products').insert(payload)
+      await supabase.from('shop_products').insert(payload)
     } else {
-      await supabaseAdmin.from('shop_products').update(payload).eq('id', modal.id)
+      await supabase.from('shop_products').update(payload).eq('id', modal.id)
     }
     await fetchAll()
     setModal(null)
@@ -81,12 +81,12 @@ export default function Shop() {
 
   async function handleDelete(id) {
     if (!window.confirm('確定刪除此商品？')) return
-    await supabaseAdmin.from('shop_products').delete().eq('id', id)
+    await supabase.from('shop_products').delete().eq('id', id)
     fetchAll()
   }
 
   async function handleToggleActive(prod) {
-    await supabaseAdmin.from('shop_products').update({ is_active: !prod.is_active }).eq('id', prod.id)
+    await supabase.from('shop_products').update({ is_active: !prod.is_active }).eq('id', prod.id)
     setProducts(prev => prev.map(p => p.id === prod.id ? { ...p, is_active: !p.is_active } : p))
   }
 
@@ -97,8 +97,8 @@ export default function Shop() {
     const member = members.find(m => m.id === pointsForm.member_id)
     if (!member) { setPointsSaving(false); return }
     const newPoints = Math.max(0, (member.shop_points || 0) + delta)
-    await supabaseAdmin.from('members').update({ shop_points: newPoints }).eq('id', member.id)
-    await supabaseAdmin.from('points_logs').insert({
+    await supabase.from('members').update({ shop_points: newPoints }).eq('id', member.id)
+    await supabase.from('points_logs').insert({
       member_id: member.id,
       points: delta,
       type: 'manual',

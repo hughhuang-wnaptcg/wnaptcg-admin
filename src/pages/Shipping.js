@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { supabaseAdmin } from '../lib/supabase'
+import { supabase } from '../lib/supabase'
 
 const STATUS_LABEL = { pending: '待出貨', completed: '已完成', cancelled: '已取消' }
 const STATUS_COLOR = {
@@ -20,7 +20,7 @@ export default function Shipping() {
   useEffect(() => { fetchOrders() }, [])
 
   async function fetchOrders() {
-    const { data } = await supabaseAdmin
+    const { data } = await supabase
       .from('shipping_orders')
       .select('*, members(display_name, avatar_url, level, member_no)')
       .order('created_at', { ascending: false })
@@ -45,7 +45,7 @@ export default function Shipping() {
   }
 
   async function quickUpdateStatus(orderId, newStatus) {
-    await supabaseAdmin.from('shipping_orders').update({
+    await supabase.from('shipping_orders').update({
       status: newStatus,
       updated_at: new Date().toISOString(),
       ...(newStatus === 'cancelled' ? { cancelled_at: new Date().toISOString() } : {}),
@@ -66,7 +66,7 @@ export default function Shipping() {
 
   async function handleEdit() {
     setSaving(true)
-    const { error } = await supabaseAdmin.from('shipping_orders').update({
+    const { error } = await supabase.from('shipping_orders').update({
       store_name: editForm.store_name,
       recipient_name: editForm.recipient_name,
       phone: editForm.phone,
@@ -85,7 +85,7 @@ export default function Shipping() {
 
   async function handleDelete() {
     setSaving(true)
-    await supabaseAdmin.from('shipping_orders').delete().eq('id', modal.order.id)
+    await supabase.from('shipping_orders').delete().eq('id', modal.order.id)
     await fetchOrders()
     setModal(null)
     setSaving(false)

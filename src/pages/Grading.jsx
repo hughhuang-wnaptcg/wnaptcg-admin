@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { supabaseAdmin } from '../lib/supabase'
+import { supabase } from '../lib/supabase'
 
 const STATUS_LABELS = {
   submitted: { label: '已送出', color: '#E07B00', bg: '#FFF3E0' },
@@ -8,7 +8,7 @@ const STATUS_LABELS = {
   sold:      { label: '已售出', color: '#757575', bg: '#F5F5F5' },
 }
 
-const SUPABASE_URL = 'https://lgsrcxxrifhdsdvnaloh.supabase.co'
+const SUPABASE_URL = process.env.REACT_APP_SUPABASE_URL
 
 export default function Grading() {
   const [submissions, setSubmissions] = useState([])
@@ -32,8 +32,8 @@ export default function Grading() {
   async function fetchAll() {
     setLoading(true)
     const [{ data: subs }, { data: mems }] = await Promise.all([
-      supabaseAdmin.from('grading_submissions').select('*, members(display_name)').order('created_at', { ascending: false }),
-      supabaseAdmin.from('members').select('id, display_name').order('display_name')
+      supabase.from('grading_submissions').select('*, members(display_name)').order('created_at', { ascending: false }),
+      supabase.from('members').select('id, display_name').order('display_name')
     ])
     setSubmissions(subs || [])
     setMembers(mems || [])
@@ -76,7 +76,7 @@ export default function Grading() {
   async function uploadImage(file, submissionId) {
     const ext = file.name.split('.').pop()
     const path = `${submissionId}.${ext}`
-    const { error } = await supabaseAdmin.storage
+    const { error } = await supabase.storage
       .from('grading-images')
       .upload(path, file, { upsert: true })
     if (error) throw error
@@ -103,7 +103,7 @@ export default function Grading() {
           notes: form.notes || null,
           image_url: image_url || null,
         }
-        await supabaseAdmin.from('grading_submissions').update(payload).eq('id', editing)
+        await supabase.from('grading_submissions').update(payload).eq('id', editing)
       } else {
         const payload = {
           member_id: form.member_id,
@@ -116,14 +116,14 @@ export default function Grading() {
           notes: form.notes || null,
           image_url: null,
         }
-        const { data: inserted, error: insertError } = await supabaseAdmin
+        const { data: inserted, error: insertError } = await supabase
           .from('grading_submissions').insert(payload).select().single()
 
         if (insertError) throw insertError
 
         if (imageFile && inserted) {
           image_url = await uploadImage(imageFile, inserted.id)
-          await supabaseAdmin.from('grading_submissions')
+          await supabase.from('grading_submissions')
             .update({ image_url }).eq('id', inserted.id)
         }
       }
@@ -139,8 +139,8 @@ export default function Grading() {
 
   async function handleDelete(id) {
     if (!window.confirm('確定刪除？')) return
-    await supabaseAdmin.storage.from('grading-images').remove([`${id}.jpg`, `${id}.jpeg`, `${id}.png`, `${id}.webp`])
-    await supabaseAdmin.from('grading_submissions').delete().eq('id', id)
+    await supabase.storage.from('grading-images').remove([`${id}.jpg`, `${id}.jpeg`, `${id}.png`, `${id}.webp`])
+    await supabase.from('grading_submissions').delete().eq('id', id)
     fetchAll()
   }
 
