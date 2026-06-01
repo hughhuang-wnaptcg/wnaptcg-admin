@@ -3,14 +3,15 @@ import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 
 const NAV = [
-  { path: '/', label: '總覽', icon: 'fa-chart-bar' },
-  { path: '/members', label: '會員管理', icon: 'fa-users' },
+  { path: '/',          label: '總覽',    icon: 'fa-chart-bar' },
+  { path: '/members',   label: '會員管理', icon: 'fa-users' },
   { path: '/purchases', label: '消費記錄', icon: 'fa-bag-shopping' },
-  { path: '/shipping', label: '出貨管理', icon: 'fa-truck' },
-  { path: '/cards', label: '戰績牆', icon: 'fa-trophy' },
-  { path: '/boss', label: 'Boss 管理', icon: 'fa-shield' },
-  { path: '/grading', label: '鑑定管理', icon: 'fa-medal' },
-  { path: '/settings', label: '系統設定', icon: 'fa-gear' },
+  { path: '/shipping',  label: '出貨管理', icon: 'fa-truck' },
+  { path: '/cards',     label: '戰績牆',  icon: 'fa-trophy' },
+  { path: '/boss',      label: 'Boss 管理', icon: 'fa-shield' },
+  { path: '/grading',   label: '鑑定管理', icon: 'fa-medal' },
+  { path: '/shop',      label: '商城管理', icon: 'fa-store' },
+  { path: '/settings',  label: '系統設定', icon: 'fa-gear' },
 ]
 
 export default function Layout({ admin, setAdmin }) {
@@ -44,9 +45,13 @@ export default function Layout({ admin, setAdmin }) {
           <div style={{ fontSize: 10, color: '#aaa', padding: '0 8px', marginBottom: 4 }}>主選單</div>
           {NAV.map(n => (
             <div key={n.path} onClick={() => navigate(n.path)}
-              style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 8, cursor: 'pointer', fontSize: 13, marginBottom: 2,
+              style={{
+                display: 'flex', alignItems: 'center', gap: 8,
+                padding: '8px 10px', borderRadius: 8, cursor: 'pointer',
+                fontSize: 13, marginBottom: 2,
                 background: isActive(n.path) ? '#FCEBEB' : 'transparent',
-                color: isActive(n.path) ? '#A32D2D' : '#666' }}>
+                color: isActive(n.path) ? '#A32D2D' : '#666',
+              }}>
               <i className={`fa-solid ${n.icon}`} style={{ fontSize: 14, width: 16, textAlign: 'center' }}></i>
               {n.label}
             </div>
