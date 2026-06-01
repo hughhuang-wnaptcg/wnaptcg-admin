@@ -7,7 +7,6 @@ export default function LoginPage() {
   const [error, setError] = useState('')
   const navigate = useNavigate()
 
-  // Google 登入後回調處理
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
       if (session?.user) {
@@ -17,7 +16,7 @@ export default function LoginPage() {
           .eq('id', session.user.id)
           .single()
         if (member?.is_admin) {
-          navigate('/')
+          navigate('/', { replace: true })
         } else {
           await supabase.auth.signOut()
           setError('你的帳號沒有管理員權限')
@@ -46,8 +45,6 @@ export default function LoginPage() {
   return (
     <div style={{ minHeight: '100vh', background: '#f5f5f5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ background: '#fff', borderRadius: 12, padding: 32, width: 360, border: '0.5px solid #e5e5e5' }}>
-
-        {/* 標題 */}
         <div style={{ textAlign: 'center', marginBottom: 32 }}>
           <div style={{ fontSize: 16, fontWeight: 600, letterSpacing: '0.06em', color: '#111' }}>W/NA PTCG</div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 4, margin: '3px auto', width: 120 }}>
@@ -60,27 +57,14 @@ export default function LoginPage() {
           <div style={{ fontSize: 12, color: '#999', marginTop: 4 }}>請使用管理員 Google 帳號登入</div>
         </div>
 
-        {/* 錯誤訊息 */}
         {error && (
           <div style={{ background: '#FCEBEB', color: '#A32D2D', padding: '8px 12px', borderRadius: 8, fontSize: 13, marginBottom: 16 }}>
             {error}
           </div>
         )}
 
-        {/* Google 登入按鈕 */}
-        <button
-          onClick={handleGoogleLogin}
-          disabled={loading}
-          style={{
-            width: '100%', padding: '11px 12px',
-            background: loading ? '#f5f5f5' : '#fff',
-            border: '0.5px solid #ddd', borderRadius: 8,
-            fontSize: 14, fontWeight: 500, color: loading ? '#aaa' : '#111',
-            cursor: loading ? 'not-allowed' : 'pointer',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
-            boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
-          }}>
-          {/* Google Logo SVG */}
+        <button onClick={handleGoogleLogin} disabled={loading}
+          style={{ width: '100%', padding: '11px 12px', background: loading ? '#f5f5f5' : '#fff', border: '0.5px solid #ddd', borderRadius: 8, fontSize: 14, fontWeight: 500, color: loading ? '#aaa' : '#111', cursor: loading ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
           {!loading && (
             <svg width="18" height="18" viewBox="0 0 18 18">
               <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615z"/>
@@ -92,9 +76,7 @@ export default function LoginPage() {
           {loading ? '登入中...' : '使用 Google 帳號登入'}
         </button>
 
-        <div style={{ marginTop: 16, fontSize: 11, color: '#ccc', textAlign: 'center' }}>
-          僅限授權管理員帳號
-        </div>
+        <div style={{ marginTop: 16, fontSize: 11, color: '#ccc', textAlign: 'center' }}>僅限授權管理員帳號</div>
       </div>
     </div>
   )
