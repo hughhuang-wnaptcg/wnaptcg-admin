@@ -21,7 +21,7 @@ export default function Shop() {
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState('products')
   const [modal, setModal] = useState(null)
-  const [form, setForm] = useState({ name: '', description: '', price: '', stock: '', tier: 'general', is_active: true, image_url: '' })
+  const [form, setForm] = useState({ name: '', description: '', price: '', stock: '', tier: 'general', is_active: true, image_url: '', max_per_member: '1' })
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [preview, setPreview] = useState(null)
@@ -76,6 +76,7 @@ export default function Shop() {
       tier: form.tier,
       is_active: form.is_active,
       image_url: form.image_url || null,
+      max_per_member: parseInt(form.max_per_member) || 1,
     }
     if (modal === 'new') {
       await supabase.from('shop_products').insert(payload)
@@ -117,9 +118,7 @@ export default function Shop() {
     const newPoints = Math.max(0, (member.shop_points || 0) + delta)
     await supabase.from('members').update({ shop_points: newPoints }).eq('id', member.id)
     await supabase.from('points_logs').insert({
-      member_id: member.id,
-      points: delta,
-      type: 'manual',
+      member_id: member.id, points: delta, type: 'manual',
       note: pointsForm.note || '管理員手動調整點數',
     })
     await fetchAll()
@@ -128,20 +127,17 @@ export default function Shop() {
   }
 
   function openNew() {
-    setForm({ name: '', description: '', price: '', stock: '', tier: 'general', is_active: true, image_url: '' })
+    setForm({ name: '', description: '', price: '', stock: '', tier: 'general', is_active: true, image_url: '', max_per_member: '1' })
     setPreview(null)
     setModal('new')
   }
 
   function openEdit(prod) {
     setForm({
-      name: prod.name,
-      description: prod.description || '',
-      price: prod.price,
-      stock: prod.stock,
-      tier: prod.tier,
-      is_active: prod.is_active,
-      image_url: prod.image_url || '',
+      name: prod.name, description: prod.description || '',
+      price: prod.price, stock: prod.stock, tier: prod.tier,
+      is_active: prod.is_active, image_url: prod.image_url || '',
+      max_per_member: String(prod.max_per_member || 1),
     })
     setPreview(prod.image_url || null)
     setModal(prod)
@@ -150,7 +146,6 @@ export default function Shop() {
   const filtered = products.filter(p => !filterTier || p.tier === filterTier)
   const filteredOrders = orders.filter(o => !filterStatus || o.status === filterStatus)
   const pendingCount = orders.filter(o => o.status === 'pending' || o.status === 'shipping_requested').length
-
   const inp = { width: '100%', padding: '8px 10px', border: '0.5px solid #ddd', borderRadius: 7, fontSize: 13, color: '#111', outline: 'none', boxSizing: 'border-box', background: '#fff' }
   const tierLabel = (tier) => TIER_OPTIONS.find(t => t.value === tier)
 
@@ -165,7 +160,6 @@ export default function Shop() {
         )}
       </div>
 
-      {/* Tab */}
       <div style={{ display: 'flex', gap: 0, marginBottom: 20, background: '#f8f8f8', borderRadius: 10, padding: 3 }}>
         {[
           { key: 'products', label: '商品管理', icon: 'fa-box' },
@@ -175,9 +169,7 @@ export default function Shop() {
           <button key={t.key} onClick={() => setTab(t.key)}
             style={{ flex: 1, padding: '8px 0', borderRadius: 8, border: 'none', fontSize: 12, fontWeight: 600, cursor: 'pointer', background: tab === t.key ? '#fff' : 'transparent', color: tab === t.key ? '#111' : '#999', boxShadow: tab === t.key ? '0 1px 3px rgba(0,0,0,.08)' : 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, position: 'relative' }}>
             <i className={`fa-solid ${t.icon}`} style={{ fontSize: 11 }}></i>{t.label}
-            {t.badge > 0 && (
-              <span style={{ position: 'absolute', top: 4, right: 8, background: '#E24B4A', color: '#fff', borderRadius: 99, fontSize: 9, fontWeight: 700, padding: '1px 5px', minWidth: 16, textAlign: 'center' }}>{t.badge}</span>
-            )}
+            {t.badge > 0 && <span style={{ position: 'absolute', top: 4, right: 8, background: '#E24B4A', color: '#fff', borderRadius: 99, fontSize: 9, fontWeight: 700, padding: '1px 5px', minWidth: 16, textAlign: 'center' }}>{t.badge}</span>}
           </button>
         ))}
       </div>
@@ -197,14 +189,14 @@ export default function Shop() {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
                 <tr style={{ borderBottom: '0.5px solid #e5e5e5', background: '#f8f8f8' }}>
-                  {['商品', '商城', '點數', '庫存', '狀態', '操作'].map(h => (
+                  {['商品', '商城', '點數', '庫存', '每人上限', '狀態', '操作'].map(h => (
                     <th key={h} style={{ padding: '10px 14px', textAlign: 'left', fontSize: 11, fontWeight: 500, color: '#999' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={6} style={{ textAlign: 'center', padding: 40, color: '#aaa' }}>載入中...</td></tr>
+                  <tr><td colSpan={7} style={{ textAlign: 'center', padding: 40, color: '#aaa' }}>載入中...</td></tr>
                 ) : filtered.map(prod => {
                   const tc = tierLabel(prod.tier)
                   return (
@@ -227,6 +219,11 @@ export default function Shop() {
                       </td>
                       <td style={{ padding: '10px 14px', fontWeight: 600, color: '#E07B00' }}>{prod.price} 點</td>
                       <td style={{ padding: '10px 14px', color: prod.stock === 0 ? '#E24B4A' : '#111' }}>{prod.stock}</td>
+                      <td style={{ padding: '10px 14px', color: '#666' }}>
+                        <span style={{ fontSize: 12, fontWeight: 600, color: (prod.max_per_member || 1) > 1 ? '#3B82F6' : '#999' }}>
+                          {prod.max_per_member || 1} 個
+                        </span>
+                      </td>
                       <td style={{ padding: '10px 14px' }}>
                         <div onClick={() => handleToggleActive(prod)}
                           style={{ width: 36, height: 20, borderRadius: 99, cursor: 'pointer', background: prod.is_active ? '#06C755' : '#e5e5e5', position: 'relative', transition: 'background 0.2s', display: 'inline-block' }}>
@@ -245,7 +242,7 @@ export default function Shop() {
                   )
                 })}
                 {!loading && filtered.length === 0 && (
-                  <tr><td colSpan={6} style={{ textAlign: 'center', padding: 40, color: '#aaa' }}>尚無商品</td></tr>
+                  <tr><td colSpan={7} style={{ textAlign: 'center', padding: 40, color: '#aaa' }}>尚無商品</td></tr>
                 )}
               </tbody>
             </table>
@@ -286,10 +283,7 @@ export default function Shop() {
                       <td style={{ padding: '10px 14px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                           <div style={{ width: 30, height: 30, borderRadius: 6, overflow: 'hidden', flexShrink: 0, background: '#f8f8f8', border: '0.5px solid #eee', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            {order.shop_products?.image_url
-                              ? <img src={order.shop_products.image_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                              : <i className="fa-solid fa-gift" style={{ fontSize: 12, color: '#ddd' }}></i>
-                            }
+                            {order.shop_products?.image_url ? <img src={order.shop_products.image_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <i className="fa-solid fa-gift" style={{ fontSize: 12, color: '#ddd' }}></i>}
                           </div>
                           <span style={{ color: '#666' }}>{order.product_name}</span>
                         </div>
@@ -301,29 +295,19 @@ export default function Shop() {
                       <td style={{ padding: '10px 14px', color: '#999' }}>{new Date(order.created_at).toLocaleDateString('zh-TW')}</td>
                       <td style={{ padding: '10px 14px' }}>
                         {canShip && (
-                          <button
-                            onClick={() => handleUpdateOrderStatus(order.id, 'shipped')}
-                            disabled={updatingOrder === order.id}
+                          <button onClick={() => handleUpdateOrderStatus(order.id, 'shipped')} disabled={updatingOrder === order.id}
                             style={{ padding: '4px 10px', border: 'none', borderRadius: 6, fontSize: 11, color: '#fff', background: updatingOrder === order.id ? '#ccc' : '#388E3C', cursor: 'pointer', marginRight: 5 }}>
                             <i className="fa-solid fa-truck" style={{ fontSize: 10, marginRight: 3 }}></i>標記出貨
                           </button>
                         )}
                         {canCancel && (
-                          <button
-                            onClick={() => handleUpdateOrderStatus(order.id, 'cancelled')}
-                            disabled={updatingOrder === order.id}
+                          <button onClick={() => handleUpdateOrderStatus(order.id, 'cancelled')} disabled={updatingOrder === order.id}
                             style={{ padding: '4px 10px', border: '0.5px solid #F09595', borderRadius: 6, fontSize: 11, color: '#A32D2D', background: 'transparent', cursor: 'pointer' }}>
                             取消
                           </button>
                         )}
-                        {order.status === 'shipped' && (
-                          <span style={{ fontSize: 11, color: '#bbb' }}>
-                            {order.shipped_at ? new Date(order.shipped_at).toLocaleDateString('zh-TW') : '已出貨'}
-                          </span>
-                        )}
-                        {order.status === 'cancelled' && (
-                          <span style={{ fontSize: 11, color: '#bbb' }}>已取消</span>
-                        )}
+                        {order.status === 'shipped' && <span style={{ fontSize: 11, color: '#bbb' }}>{order.shipped_at ? new Date(order.shipped_at).toLocaleDateString('zh-TW') : '已出貨'}</span>}
+                        {order.status === 'cancelled' && <span style={{ fontSize: 11, color: '#bbb' }}>已取消</span>}
                       </td>
                     </tr>
                   )
@@ -371,9 +355,7 @@ export default function Shop() {
             <div style={{ maxHeight: 320, overflowY: 'auto' }}>
               {members.map(m => (
                 <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', borderBottom: '0.5px solid #f5f5f5' }}>
-                  <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#FAEEDA', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 600, color: '#633806', flexShrink: 0 }}>
-                    {m.display_name?.[0]}
-                  </div>
+                  <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#FAEEDA', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 600, color: '#633806', flexShrink: 0 }}>{m.display_name?.[0]}</div>
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: 13, fontWeight: 500, color: '#111' }}>{m.display_name}</div>
                     <div style={{ fontSize: 10, color: '#999' }}>{m.level}</div>
@@ -397,8 +379,7 @@ export default function Shop() {
             <input ref={fileRef} type="file" accept="image/*" onChange={handleUpload} style={{ display: 'none' }} />
             <div onClick={() => !uploading && fileRef.current?.click()}
               style={{ border: '0.5px dashed #ddd', borderRadius: 8, marginBottom: 14, minHeight: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: uploading ? 'not-allowed' : 'pointer', background: '#f8f8f8', overflow: 'hidden' }}>
-              {preview
-                ? <img src={preview} alt="" style={{ maxHeight: 120, objectFit: 'contain', borderRadius: 6 }} />
+              {preview ? <img src={preview} alt="" style={{ maxHeight: 120, objectFit: 'contain', borderRadius: 6 }} />
                 : <div style={{ textAlign: 'center', color: '#aaa' }}>
                     <i className="fa-solid fa-image" style={{ fontSize: 24, display: 'block', marginBottom: 6 }}></i>
                     <div style={{ fontSize: 12 }}>{uploading ? '上傳中...' : '點擊上傳商品圖片'}</div>
@@ -413,7 +394,7 @@ export default function Shop() {
               <label style={{ fontSize: 11, color: '#999', display: 'block', marginBottom: 4 }}>商品描述</label>
               <input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="簡短描述..." style={inp} />
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 12 }}>
               <div>
                 <label style={{ fontSize: 11, color: '#999', display: 'block', marginBottom: 4 }}>點數價格 *</label>
                 <input type="number" value={form.price} onChange={e => setForm(f => ({ ...f, price: e.target.value }))} placeholder="50" style={inp} />
@@ -421,6 +402,10 @@ export default function Shop() {
               <div>
                 <label style={{ fontSize: 11, color: '#999', display: 'block', marginBottom: 4 }}>庫存數量 *</label>
                 <input type="number" value={form.stock} onChange={e => setForm(f => ({ ...f, stock: e.target.value }))} placeholder="10" style={inp} />
+              </div>
+              <div>
+                <label style={{ fontSize: 11, color: '#999', display: 'block', marginBottom: 4 }}>每人上限</label>
+                <input type="number" min="1" value={form.max_per_member} onChange={e => setForm(f => ({ ...f, max_per_member: e.target.value }))} placeholder="1" style={inp} />
               </div>
             </div>
             <div style={{ marginBottom: 12 }}>
