@@ -8,10 +8,10 @@ const TIER_OPTIONS = [
 ]
 
 const STATUS_OPTIONS = [
-  { value: 'pending',   label: '待處理', color: '#E07B00', bg: '#FFF3E0' },
+  { value: 'pending',            label: '待處理',  color: '#E07B00', bg: '#FFF3E0' },
   { value: 'shipping_requested', label: '申請出貨', color: '#3B82F6', bg: '#EFF6FF' },
-  { value: 'shipped',   label: '已出貨', color: '#388E3C', bg: '#EAF3DE' },
-  { value: 'cancelled', label: '已取消', color: '#999',    bg: '#f5f5f5' },
+  { value: 'shipped',            label: '已出貨',  color: '#388E3C', bg: '#EAF3DE' },
+  { value: 'cancelled',          label: '已取消',  color: '#999',    bg: '#f5f5f5' },
 ]
 
 export default function Shop() {
@@ -149,11 +149,11 @@ export default function Shop() {
 
   const filtered = products.filter(p => !filterTier || p.tier === filterTier)
   const filteredOrders = orders.filter(o => !filterStatus || o.status === filterStatus)
+  const actionableStatuses = ['pending', 'shipping_requested']
+  const pendingCount = orders.filter(o => actionableStatuses.includes(o.status)).length
 
   const inp = { width: '100%', padding: '8px 10px', border: '0.5px solid #ddd', borderRadius: 7, fontSize: 13, color: '#111', outline: 'none', boxSizing: 'border-box', background: '#fff' }
   const tierLabel = (tier) => TIER_OPTIONS.find(t => t.value === tier)
-
-  const pendingCount = orders.filter(o => o.status === 'pending').length
 
   return (
     <div style={{ padding: 24 }}>
@@ -257,7 +257,7 @@ export default function Shop() {
       {/* 訂單管理 */}
       {tab === 'orders' && (
         <>
-          <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
             {[{ value: '', label: '全部' }, ...STATUS_OPTIONS].map(opt => (
               <button key={opt.value} onClick={() => setFilterStatus(opt.value)}
                 style={{ padding: '5px 12px', borderRadius: 99, fontSize: 12, border: `0.5px solid ${filterStatus === opt.value ? '#E07B00' : '#ddd'}`, background: filterStatus === opt.value ? '#FFF3E0' : '#fff', color: filterStatus === opt.value ? '#E07B00' : '#666', cursor: 'pointer', fontWeight: filterStatus === opt.value ? 600 : 400 }}>
@@ -279,6 +279,7 @@ export default function Shop() {
                   <tr><td colSpan={6} style={{ textAlign: 'center', padding: 40, color: '#aaa' }}>載入中...</td></tr>
                 ) : filteredOrders.map(order => {
                   const sc = STATUS_OPTIONS.find(s => s.value === order.status) || STATUS_OPTIONS[0]
+                  const canAct = actionableStatuses.includes(order.status)
                   return (
                     <tr key={order.id} style={{ borderBottom: '0.5px solid #f0f0f0' }}>
                       <td style={{ padding: '10px 14px', fontWeight: 500, color: '#111' }}>{order.members?.display_name || '-'}</td>
@@ -299,7 +300,7 @@ export default function Shop() {
                       </td>
                       <td style={{ padding: '10px 14px', color: '#999' }}>{new Date(order.created_at).toLocaleDateString('zh-TW')}</td>
                       <td style={{ padding: '10px 14px' }}>
-                        {order.status === 'pending' || order.status === 'shipping_requested') order.status === 'pending' && (order.status === 'pending' && ( (
+                        {canAct && (
                           <button
                             onClick={() => handleUpdateOrderStatus(order.id, 'shipped')}
                             disabled={updatingOrder === order.id}
@@ -307,7 +308,7 @@ export default function Shop() {
                             <i className="fa-solid fa-truck" style={{ fontSize: 10, marginRight: 3 }}></i>標記出貨
                           </button>
                         )}
-                        {order.status === 'pending' || order.status === 'shipping_requested') order.status === 'pending' && (order.status === 'pending' && ( (
+                        {canAct && (
                           <button
                             onClick={() => handleUpdateOrderStatus(order.id, 'cancelled')}
                             disabled={updatingOrder === order.id}
@@ -319,6 +320,9 @@ export default function Shop() {
                           <span style={{ fontSize: 11, color: '#bbb' }}>
                             {order.shipped_at ? new Date(order.shipped_at).toLocaleDateString('zh-TW') : '已出貨'}
                           </span>
+                        )}
+                        {order.status === 'cancelled' && (
+                          <span style={{ fontSize: 11, color: '#bbb' }}>已取消</span>
                         )}
                       </td>
                     </tr>
@@ -360,7 +364,6 @@ export default function Shop() {
               {pointsSaving ? '處理中...' : '確認調整'}
             </button>
           </div>
-
           <div style={{ background: '#fff', border: '0.5px solid #e5e5e5', borderRadius: 10, overflow: 'hidden' }}>
             <div style={{ padding: '14px 16px', borderBottom: '0.5px solid #eee', fontSize: 14, fontWeight: 600, color: '#111' }}>
               <i className="fa-solid fa-list" style={{ color: '#E07B00', marginRight: 6 }}></i>會員點數一覽
