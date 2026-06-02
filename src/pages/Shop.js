@@ -149,8 +149,7 @@ export default function Shop() {
 
   const filtered = products.filter(p => !filterTier || p.tier === filterTier)
   const filteredOrders = orders.filter(o => !filterStatus || o.status === filterStatus)
-  const actionableStatuses = ['pending', 'shipping_requested']
-  const pendingCount = orders.filter(o => actionableStatuses.includes(o.status)).length
+  const pendingCount = orders.filter(o => o.status === 'pending' || o.status === 'shipping_requested').length
 
   const inp = { width: '100%', padding: '8px 10px', border: '0.5px solid #ddd', borderRadius: 7, fontSize: 13, color: '#111', outline: 'none', boxSizing: 'border-box', background: '#fff' }
   const tierLabel = (tier) => TIER_OPTIONS.find(t => t.value === tier)
@@ -279,7 +278,8 @@ export default function Shop() {
                   <tr><td colSpan={6} style={{ textAlign: 'center', padding: 40, color: '#aaa' }}>載入中...</td></tr>
                 ) : filteredOrders.map(order => {
                   const sc = STATUS_OPTIONS.find(s => s.value === order.status) || STATUS_OPTIONS[0]
-                  const canAct = actionableStatuses.includes(order.status)
+                  const canShip = order.status === 'shipping_requested'
+                  const canCancel = order.status === 'pending' || order.status === 'shipping_requested'
                   return (
                     <tr key={order.id} style={{ borderBottom: '0.5px solid #f0f0f0' }}>
                       <td style={{ padding: '10px 14px', fontWeight: 500, color: '#111' }}>{order.members?.display_name || '-'}</td>
@@ -300,7 +300,7 @@ export default function Shop() {
                       </td>
                       <td style={{ padding: '10px 14px', color: '#999' }}>{new Date(order.created_at).toLocaleDateString('zh-TW')}</td>
                       <td style={{ padding: '10px 14px' }}>
-                        {canAct && (
+                        {canShip && (
                           <button
                             onClick={() => handleUpdateOrderStatus(order.id, 'shipped')}
                             disabled={updatingOrder === order.id}
@@ -308,7 +308,7 @@ export default function Shop() {
                             <i className="fa-solid fa-truck" style={{ fontSize: 10, marginRight: 3 }}></i>標記出貨
                           </button>
                         )}
-                        {canAct && (
+                        {canCancel && (
                           <button
                             onClick={() => handleUpdateOrderStatus(order.id, 'cancelled')}
                             disabled={updatingOrder === order.id}
