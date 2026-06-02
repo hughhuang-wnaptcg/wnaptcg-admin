@@ -104,8 +104,16 @@ export default function Shop() {
 
   async function handleDelete(id) {
     if (!window.confirm('確定刪除此商品？')) return
-    await supabase.from('shop_products').delete().eq('id', id)
-    fetchAll()
+    const { data, error } = await supabase.from('shop_products').delete().eq('id', id).select('id')
+    if (error) {
+      alert('商品刪除失敗：' + error.message)
+      return
+    }
+    if (!data || data.length === 0) {
+      alert('商品刪除失敗：找不到商品或目前帳號沒有刪除權限')
+      return
+    }
+    await fetchAll()
   }
 
   async function handleToggleActive(prod) {
