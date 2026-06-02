@@ -13,6 +13,7 @@ export default function AdminSettings() {
   const [announcement, setAnnouncement] = useState('')
   const [news, setNews] = useState({ title: '', date: '', image_url: '', body: '' })
   const [benefits, setBenefits] = useState(DEFAULT_BENEFITS)
+  const [defaultAvatars, setDefaultAvatars] = useState([])
   const [modal, setModal] = useState(null)
   const [form, setForm] = useState({})
   const [saving, setSaving] = useState(false)
@@ -21,6 +22,7 @@ export default function AdminSettings() {
   const [editLevelIdx, setEditLevelIdx] = useState(0)
   const [newItem, setNewItem] = useState('')
   const fileRef = useRef()
+  const avatarFileRef = useRef()
 
   useEffect(() => { fetchSettings() }, [])
 
@@ -32,6 +34,7 @@ export default function AdminSettings() {
       if (s.announcement) setAnnouncement(s.announcement)
       if (s.news) setNews(s.news)
       if (s.benefits) setBenefits(s.benefits)
+      if (s.default_avatars) setDefaultAvatars(s.default_avatars)
       setSettings(s)
     }
   }
@@ -52,6 +55,8 @@ export default function AdminSettings() {
         }
       } else if (modal === 'benefits') {
         await supabase.from('settings').upsert({ key: 'benefits', value: JSON.stringify(benefits) })
+      } else if (modal === 'avatars') {
+        await supabase.from('settings').upsert({ key: 'default_avatars', value: JSON.stringify(defaultAvatars) })
       }
       await fetchSettings()
       setModal(null)
@@ -76,6 +81,24 @@ export default function AdminSettings() {
       const { data } = supabase.storage.from('card-images').getPublicUrl(path)
       setForm(f => ({ ...f, image_url: data.publicUrl }))
     } catch(err) { alert('圖片上傳失敗：' + err.message); setPreview(null) }
+    setUploading(false)
+  }
+
+  async function handleAvatarUpload(e) {
+    const file = e.target.files[0]
+    if (!file) return
+    setUploading(true)
+    try {
+      const ext = file.name.split('.').pop()
+      const path = `default-avatars/${Date.now()}.${ext}`
+      const { error } = await supabase.storage.from('card-images').upload(path, file, { cacheControl: '3600', upsert: false })
+      if (error) throw error
+      const { data } = supabase.storage.from('card-images').getPublicUrl(path)
+      setDefaultAvatars(prev => [...prev, data.publicUrl])
+    } catch(err) {
+      alert('基本頭貼上傳失敗：' + err.message)
+    }
+    if (avatarFileRef.current) avatarFileRef.current.value = ''
     setUploading(false)
   }
 
@@ -206,6 +229,22 @@ export default function AdminSettings() {
           ))}
         </div>
 
+        {/* 基本頭貼 */}
+        <div style={cardStyle}>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:14 }}>
+            <div style={{ fontSize:13, fontWeight:500, color:'#111', display:'flex', alignItems:'center', gap:6 }}>
+              <i className="fa-solid fa-user-circle" style={{ color:'#E24B4A' }}></i> 會員基本頭貼
+            </div>
+            <button onClick={() => openModal('avatars')} style={btnStyle}><i className="fa-solid fa-pen" style={{ marginRight:3 }}></i> 管理</button>
+          </div>
+          {defaultAvatars.length === 0
+            ? <div style={{ fontSize:13, color:'#aaa', padding:'10px 12px', background:'#f8f8f8', borderRadius:8 }}>（尚未設定基本頭貼）</div>
+            : <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+                {defaultAvatars.map(url => <img key={url} src={url} alt="" style={{ width:42, height:42, borderRadius:'50%', objectFit:'cover', border:'1.5px solid #eee' }} />)}
+              </div>
+          }
+        </div>
+
       </div>
 
       {/* 會員福利 — 全寬 */}
@@ -318,6 +357,31 @@ export default function AdminSettings() {
             <ModalFooter onClose={() => setModal(null)} onSave={handleSave} saving={saving} label="儲存福利設定" />
           </div>
         </div>
+      )}
+
+      {/* ── 彈窗：基本頭貼 ── */}
+      {modal === 'avatars' && (
+        <Overlay onClose={() => setModal(null)} width={420}>
+          <ModalHead title="管理會員基本頭貼" sub="上傳後，會員可以在個人設定中選擇使用" onClose={() => setModal(null)} />
+          <input ref={avatarFileRef} type="file" accept="image/*" onChange={handleAvatarUpload} style={{ display:'none' }} />
+          <button onClick={() => !uploading && avatarFileRef.current?.click()} disabled={uploading}
+            style={{ width:'100%', padding:10, background:uploading?'#ccc':'#111', border:'none', borderRadius:8, fontSize:13, color:'#fff', cursor:uploading?'not-allowed':'pointer', marginBottom:14 }}>
+            {uploading ? '上傳中...' : '＋ 上傳基本頭貼'}
+          </button>
+          {defaultAvatars.length === 0
+            ? <div style={{ textAlign:'center', padding:'18px 0', fontSize:13, color:'#ccc' }}>尚未上傳基本頭貼</div>
+            : <div style={{ display:'grid', gridTemplateColumns:'repeat(5,1fr)', gap:10 }}>
+                {defaultAvatars.map(url => (
+                  <div key={url} style={{ textAlign:'center' }}>
+                    <img src={url} alt="" style={{ width:54, height:54, borderRadius:'50%', objectFit:'cover', border:'1.5px solid #eee', marginBottom:4 }} />
+                    <button onClick={() => setDefaultAvatars(prev => prev.filter(item => item !== url))}
+                      style={{ border:'none', background:'transparent', fontSize:11, color:'#A32D2D', cursor:'pointer' }}>移除</button>
+                  </div>
+                ))}
+              </div>
+          }
+          <ModalFooter onClose={() => setModal(null)} onSave={handleSave} saving={saving || uploading} label="儲存基本頭貼" />
+        </Overlay>
       )}
     </div>
   )
