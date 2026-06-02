@@ -14,6 +14,25 @@ const STATUS_OPTIONS = [
   { value: 'cancelled',          label: '已取消',  color: '#999',    bg: '#f5f5f5' },
 ]
 
+// 把訂單合併：同一會員、同一商品、同一狀態 → 一行
+function groupOrders(orders) {
+  const map = {}
+  orders.forEach(o => {
+    const key = `${o.member_id}__${o.product_id}__${o.status}`
+    if (!map[key]) {
+      map[key] = { ...o, qty: 1, ids: [o.id] }
+    } else {
+      map[key].qty += 1
+      map[key].ids.push(o.id)
+      // 取最新時間
+      if (new Date(o.created_at) > new Date(map[key].created_at)) {
+        map[key].created_at = o.created_at
+      }
+    }
+  })
+  return Object.values(map).sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+}
+
 export default function Shop() {
   const [products, setProducts] = useState([])
   const [members, setMembers] = useState([])
@@ -39,7 +58,7 @@ export default function Shop() {
     const [{ data: prods }, { data: mems }, { data: ords }] = await Promise.all([
       supabase.from('shop_products').select('*').order('created_at', { ascending: false }),
       supabase.from('members').select('id, display_name, shop_points, level').order('display_name'),
-      supabase.from('shop_orders').select('*, members(display_name), shop_products(name, image_url)').order('created_at', { ascending: false }).limit(200),
+      supabase.from('shop_orders').select('*, members(display_name), shop_products(name, image_url)').order('created_at', { ascending: false }).limit(500),
     ])
     setProducts(prods || [])
     setMembers(mems || [])
@@ -69,12 +88,9 @@ export default function Shop() {
     if (!form.name || !form.price || !form.stock) return
     setSaving(true)
     const payload = {
-      name: form.name,
-      description: form.description || null,
-      price: parseInt(form.price),
-      stock: parseInt(form.stock),
-      tier: form.tier,
-      is_active: form.is_active,
+      name: form.name, description: form.description || null,
+      price: parseInt(form.price), stock: parseInt(form.stock),
+      tier: form.tier, is_active: form.is_active,
       image_url: form.image_url || null,
       max_per_member: parseInt(form.max_per_member) || 1,
     }
@@ -83,10 +99,7 @@ export default function Shop() {
     } else {
       await supabase.from('shop_products').update(payload).eq('id', modal.id)
     }
-    await fetchAll()
-    setModal(null)
-    setPreview(null)
-    setSaving(false)
+    await fetchAll(); setModal(null); setPreview(null); setSaving(false)
   }
 
   async function handleDelete(id) {
@@ -100,12 +113,14 @@ export default function Shop() {
     setProducts(prev => prev.map(p => p.id === prod.id ? { ...p, is_active: !p.is_active } : p))
   }
 
-  async function handleUpdateOrderStatus(orderId, newStatus) {
-    setUpdatingOrder(orderId)
+  // 批量更新一組 ids
+  async function handleUpdateGroupStatus(ids, newStatus) {
+    const key = ids.join(',')
+    setUpdatingOrder(key)
     const updateData = { status: newStatus }
     if (newStatus === 'shipped') updateData.shipped_at = new Date().toISOString()
-    await supabase.from('shop_orders').update(updateData).eq('id', orderId)
-    setOrders(prev => prev.map(o => o.id === orderId ? { ...o, ...updateData } : o))
+    await supabase.from('shop_orders').update(updateData).in('id', ids)
+    await fetchAll()
     setUpdatingOrder(null)
   }
 
@@ -128,24 +143,21 @@ export default function Shop() {
 
   function openNew() {
     setForm({ name: '', description: '', price: '', stock: '', tier: 'general', is_active: true, image_url: '', max_per_member: '1' })
-    setPreview(null)
-    setModal('new')
+    setPreview(null); setModal('new')
   }
 
   function openEdit(prod) {
-    setForm({
-      name: prod.name, description: prod.description || '',
-      price: prod.price, stock: prod.stock, tier: prod.tier,
-      is_active: prod.is_active, image_url: prod.image_url || '',
-      max_per_member: String(prod.max_per_member || 1),
-    })
-    setPreview(prod.image_url || null)
-    setModal(prod)
+    setForm({ name: prod.name, description: prod.description || '', price: prod.price, stock: prod.stock, tier: prod.tier, is_active: prod.is_active, image_url: prod.image_url || '', max_per_member: String(prod.max_per_member || 1) })
+    setPreview(prod.image_url || null); setModal(prod)
   }
 
   const filtered = products.filter(p => !filterTier || p.tier === filterTier)
-  const filteredOrders = orders.filter(o => !filterStatus || o.status === filterStatus)
-  const pendingCount = orders.filter(o => o.status === 'pending' || o.status === 'shipping_requested').length
+
+  // 合併訂單，再篩選狀態
+  const groupedOrders = groupOrders(orders)
+  const filteredGrouped = groupedOrders.filter(o => !filterStatus || o.status === filterStatus)
+  const pendingCount = groupedOrders.filter(o => o.status === 'pending' || o.status === 'shipping_requested').length
+
   const inp = { width: '100%', padding: '8px 10px', border: '0.5px solid #ddd', borderRadius: 7, fontSize: 13, color: '#111', outline: 'none', boxSizing: 'border-box', background: '#fff' }
   const tierLabel = (tier) => TIER_OPTIONS.find(t => t.value === tier)
 
@@ -219,10 +231,8 @@ export default function Shop() {
                       </td>
                       <td style={{ padding: '10px 14px', fontWeight: 600, color: '#E07B00' }}>{prod.price} 點</td>
                       <td style={{ padding: '10px 14px', color: prod.stock === 0 ? '#E24B4A' : '#111' }}>{prod.stock}</td>
-                      <td style={{ padding: '10px 14px', color: '#666' }}>
-                        <span style={{ fontSize: 12, fontWeight: 600, color: (prod.max_per_member || 1) > 1 ? '#3B82F6' : '#999' }}>
-                          {prod.max_per_member || 1} 個
-                        </span>
+                      <td style={{ padding: '10px 14px' }}>
+                        <span style={{ fontSize: 12, fontWeight: 600, color: (prod.max_per_member || 1) > 1 ? '#3B82F6' : '#999' }}>{prod.max_per_member || 1} 個</span>
                       </td>
                       <td style={{ padding: '10px 14px' }}>
                         <div onClick={() => handleToggleActive(prod)}
@@ -250,7 +260,7 @@ export default function Shop() {
         </>
       )}
 
-      {/* 訂單管理 */}
+      {/* 訂單管理（合併顯示） */}
       {tab === 'orders' && (
         <>
           <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
@@ -265,55 +275,71 @@ export default function Shop() {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
                 <tr style={{ borderBottom: '0.5px solid #e5e5e5', background: '#f8f8f8' }}>
-                  {['會員', '商品', '扣除點數', '狀態', '時間', '操作'].map(h => (
+                  {['會員', '商品', '數量', '扣除點數', '狀態', '時間', '操作'].map(h => (
                     <th key={h} style={{ padding: '10px 14px', textAlign: 'left', fontSize: 11, fontWeight: 500, color: '#999' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={6} style={{ textAlign: 'center', padding: 40, color: '#aaa' }}>載入中...</td></tr>
-                ) : filteredOrders.map(order => {
+                  <tr><td colSpan={7} style={{ textAlign: 'center', padding: 40, color: '#aaa' }}>載入中...</td></tr>
+                ) : filteredGrouped.map((order, idx) => {
                   const sc = STATUS_OPTIONS.find(s => s.value === order.status) || STATUS_OPTIONS[0]
                   const canShip = order.status === 'shipping_requested'
                   const canCancel = order.status === 'pending' || order.status === 'shipping_requested'
+                  const groupKey = order.ids.join(',')
+                  const isUpdating = updatingOrder === groupKey
                   return (
-                    <tr key={order.id} style={{ borderBottom: '0.5px solid #f0f0f0' }}>
+                    <tr key={idx} style={{ borderBottom: '0.5px solid #f0f0f0' }}>
                       <td style={{ padding: '10px 14px', fontWeight: 500, color: '#111' }}>{order.members?.display_name || '-'}</td>
                       <td style={{ padding: '10px 14px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                           <div style={{ width: 30, height: 30, borderRadius: 6, overflow: 'hidden', flexShrink: 0, background: '#f8f8f8', border: '0.5px solid #eee', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            {order.shop_products?.image_url ? <img src={order.shop_products.image_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <i className="fa-solid fa-gift" style={{ fontSize: 12, color: '#ddd' }}></i>}
+                            {order.shop_products?.image_url
+                              ? <img src={order.shop_products.image_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                              : <i className="fa-solid fa-gift" style={{ fontSize: 12, color: '#ddd' }}></i>
+                            }
                           </div>
                           <span style={{ color: '#666' }}>{order.product_name}</span>
                         </div>
                       </td>
-                      <td style={{ padding: '10px 14px', fontWeight: 600, color: '#E24B4A' }}>-{order.points_spent} 點</td>
+                      <td style={{ padding: '10px 14px' }}>
+                        {order.qty > 1
+                          ? <span style={{ fontSize: 13, fontWeight: 700, color: '#3B82F6', background: '#EFF6FF', padding: '2px 8px', borderRadius: 99 }}>× {order.qty}</span>
+                          : <span style={{ fontSize: 13, color: '#999' }}>× 1</span>
+                        }
+                      </td>
+                      <td style={{ padding: '10px 14px', fontWeight: 600, color: '#E24B4A' }}>-{order.points_spent * order.qty} 點</td>
                       <td style={{ padding: '10px 14px' }}>
                         <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 99, background: sc.bg, color: sc.color, fontWeight: 600 }}>{sc.label}</span>
                       </td>
                       <td style={{ padding: '10px 14px', color: '#999' }}>{new Date(order.created_at).toLocaleDateString('zh-TW')}</td>
                       <td style={{ padding: '10px 14px' }}>
                         {canShip && (
-                          <button onClick={() => handleUpdateOrderStatus(order.id, 'shipped')} disabled={updatingOrder === order.id}
-                            style={{ padding: '4px 10px', border: 'none', borderRadius: 6, fontSize: 11, color: '#fff', background: updatingOrder === order.id ? '#ccc' : '#388E3C', cursor: 'pointer', marginRight: 5 }}>
-                            <i className="fa-solid fa-truck" style={{ fontSize: 10, marginRight: 3 }}></i>標記出貨
+                          <button onClick={() => handleUpdateGroupStatus(order.ids, 'shipped')} disabled={isUpdating}
+                            style={{ padding: '4px 10px', border: 'none', borderRadius: 6, fontSize: 11, color: '#fff', background: isUpdating ? '#ccc' : '#388E3C', cursor: 'pointer', marginRight: 5 }}>
+                            <i className="fa-solid fa-truck" style={{ fontSize: 10, marginRight: 3 }}></i>
+                            {order.qty > 1 ? `全部出貨 (${order.qty})` : '標記出貨'}
                           </button>
                         )}
                         {canCancel && (
-                          <button onClick={() => handleUpdateOrderStatus(order.id, 'cancelled')} disabled={updatingOrder === order.id}
+                          <button onClick={() => handleUpdateGroupStatus(order.ids, 'cancelled')} disabled={isUpdating}
                             style={{ padding: '4px 10px', border: '0.5px solid #F09595', borderRadius: 6, fontSize: 11, color: '#A32D2D', background: 'transparent', cursor: 'pointer' }}>
                             取消
                           </button>
                         )}
-                        {order.status === 'shipped' && <span style={{ fontSize: 11, color: '#bbb' }}>{order.shipped_at ? new Date(order.shipped_at).toLocaleDateString('zh-TW') : '已出貨'}</span>}
-                        {order.status === 'cancelled' && <span style={{ fontSize: 11, color: '#bbb' }}>已取消</span>}
+                        {order.status === 'shipped' && (
+                          <span style={{ fontSize: 11, color: '#bbb' }}>{order.shipped_at ? new Date(order.shipped_at).toLocaleDateString('zh-TW') : '已出貨'}</span>
+                        )}
+                        {order.status === 'cancelled' && (
+                          <span style={{ fontSize: 11, color: '#bbb' }}>已取消</span>
+                        )}
                       </td>
                     </tr>
                   )
                 })}
-                {!loading && filteredOrders.length === 0 && (
-                  <tr><td colSpan={6} style={{ textAlign: 'center', padding: 40, color: '#aaa' }}>尚無訂單</td></tr>
+                {!loading && filteredGrouped.length === 0 && (
+                  <tr><td colSpan={7} style={{ textAlign: 'center', padding: 40, color: '#aaa' }}>尚無訂單</td></tr>
                 )}
               </tbody>
             </table>
