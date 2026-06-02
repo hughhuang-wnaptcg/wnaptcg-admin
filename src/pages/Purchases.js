@@ -42,7 +42,9 @@ export default function Purchases() {
     const m = l.note?.match(/消費 \$([0-9,.]+)/)
     return s + (m ? parseFloat(m[1].replace(',','')) : 0)
   }, 0)
-  const totalPoints = filtered.reduce((s, l) => s + (l.points || 0), 0)
+  const totalShopPoints = members
+    .filter(m => !memberFilter || m.id === memberFilter)
+    .reduce((s, m) => s + (m.shop_points || 0), 0)
 
   function parseLog(log) {
     const amountMatch = log.note?.match(/消費 \$([0-9,.]+)/)
@@ -229,7 +231,7 @@ export default function Purchases() {
         {[
           { icon: 'fa-bag-shopping', label: '消費筆數', value: `${filtered.length} 筆`, color: '#06C755' },
           { icon: 'fa-dollar-sign', label: '消費總額', value: `$${totalAmount.toLocaleString()}`, color: '#BA7517' },
-          { icon: 'fa-star', label: '發出積分', value: `${totalPoints.toLocaleString()} 點`, color: '#E24B4A' },
+          { icon: 'fa-coins', label: '發出點數', value: `${totalShopPoints.toLocaleString()} 點`, color: '#E07B00' },
         ].map(s => (
           <div key={s.label} style={{ background: '#fff', border: '0.5px solid #e5e5e5', borderRadius: 10, padding: '12px 14px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
