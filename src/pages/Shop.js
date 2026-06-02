@@ -9,6 +9,7 @@ const TIER_OPTIONS = [
 
 const STATUS_OPTIONS = [
   { value: 'pending',   label: '待處理', color: '#E07B00', bg: '#FFF3E0' },
+  { value: 'shipping_requested', label: '申請出貨', color: '#3B82F6', bg: '#EFF6FF' },
   { value: 'shipped',   label: '已出貨', color: '#388E3C', bg: '#EAF3DE' },
   { value: 'cancelled', label: '已取消', color: '#999',    bg: '#f5f5f5' },
 ]
@@ -298,7 +299,7 @@ export default function Shop() {
                       </td>
                       <td style={{ padding: '10px 14px', color: '#999' }}>{new Date(order.created_at).toLocaleDateString('zh-TW')}</td>
                       <td style={{ padding: '10px 14px' }}>
-                        {order.status === 'pending' && (
+                        {order.status === 'pending' || order.status === 'shipping_requested') order.status === 'pending' && (order.status === 'pending' && ( (
                           <button
                             onClick={() => handleUpdateOrderStatus(order.id, 'shipped')}
                             disabled={updatingOrder === order.id}
@@ -306,7 +307,7 @@ export default function Shop() {
                             <i className="fa-solid fa-truck" style={{ fontSize: 10, marginRight: 3 }}></i>標記出貨
                           </button>
                         )}
-                        {order.status === 'pending' && (
+                        {order.status === 'pending' || order.status === 'shipping_requested') order.status === 'pending' && (order.status === 'pending' && ( (
                           <button
                             onClick={() => handleUpdateOrderStatus(order.id, 'cancelled')}
                             disabled={updatingOrder === order.id}
