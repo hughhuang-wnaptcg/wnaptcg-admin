@@ -6,21 +6,17 @@ const LEVELS = [
   { name: '豪華球', min: 20000 }, { name: '貴重球', min: 50000 }, { name: '究極球', min: 100000 }, { name: '大師球', min: 300000 },
 ]
 const LEVEL_COLORS = ['#888780','#378ADD','#E24B4A','#BA7517','#854F0B','#534AB7','#26215C']
-const DEFAULT_BENEFITS = LEVELS.map(l => ({ level: l.name, items: [] }))
 
 export default function AdminSettings() {
   const [settings, setSettings] = useState({ points_login: 5, points_streak_bonus: 15, points_purchase_ratio: 1 })
   const [announcement, setAnnouncement] = useState('')
   const [news, setNews] = useState({ title: '', date: '', image_url: '', body: '' })
-  const [benefits, setBenefits] = useState(DEFAULT_BENEFITS)
   const [defaultAvatars, setDefaultAvatars] = useState([])
   const [modal, setModal] = useState(null)
   const [form, setForm] = useState({})
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [preview, setPreview] = useState(null)
-  const [editLevelIdx, setEditLevelIdx] = useState(0)
-  const [newItem, setNewItem] = useState('')
   const fileRef = useRef()
   const avatarFileRef = useRef()
 
@@ -33,7 +29,6 @@ export default function AdminSettings() {
       data.forEach(d => { try { s[d.key] = JSON.parse(d.value) } catch(e) { s[d.key] = d.value } })
       if (s.announcement) setAnnouncement(s.announcement)
       if (s.news) setNews(s.news)
-      if (s.benefits) setBenefits(s.benefits)
       if (s.default_avatars) setDefaultAvatars(s.default_avatars)
       setSettings(s)
     }
@@ -53,15 +48,12 @@ export default function AdminSettings() {
         for (const [key, value] of Object.entries(form)) {
           await supabase.from('settings').upsert({ key, value: JSON.stringify(value) })
         }
-      } else if (modal === 'benefits') {
-        await supabase.from('settings').upsert({ key: 'benefits', value: JSON.stringify(benefits) })
       } else if (modal === 'avatars') {
         await supabase.from('settings').upsert({ key: 'default_avatars', value: JSON.stringify(defaultAvatars) })
       }
       await fetchSettings()
       setModal(null)
       setPreview(null)
-      setNewItem('')
     } catch(e) { console.error(e) }
     setSaving(false)
   }
@@ -106,27 +98,7 @@ export default function AdminSettings() {
     if (type === 'points') setForm({ points_login: settings.points_login||5, points_streak_bonus: settings.points_streak_bonus||15, points_purchase_ratio: settings.points_purchase_ratio||1 })
     if (type === 'announcement') setForm({ announcement })
     if (type === 'news') { setForm({ title: news.title||'', date: news.date||'', image_url: news.image_url||'', body: news.body||'' }); setPreview(news.image_url||null) }
-    if (type === 'benefits') { setEditLevelIdx(0); setNewItem('') }
     setModal(type)
-  }
-
-  // 福利操作
-  function addItem() {
-    if (!newItem.trim()) return
-    setBenefits(benefits.map((b, i) => i === editLevelIdx ? { ...b, items: [...b.items, newItem.trim()] } : b))
-    setNewItem('')
-  }
-  function removeItem(li, ii) {
-    setBenefits(benefits.map((b, i) => i === li ? { ...b, items: b.items.filter((_, j) => j !== ii) } : b))
-  }
-  function moveItem(li, ii, dir) {
-    setBenefits(benefits.map((b, i) => {
-      if (i !== li) return b
-      const items = [...b.items]; const t = ii + dir
-      if (t < 0 || t >= items.length) return b
-      ;[items[ii], items[t]] = [items[t], items[ii]]
-      return { ...b, items }
-    }))
   }
 
   const btnStyle = { display:'flex', alignItems:'center', gap:4, padding:'4px 10px', border:'0.5px solid #ddd', borderRadius:6, fontSize:11, color:'#666', background:'transparent', cursor:'pointer' }
@@ -247,32 +219,6 @@ export default function AdminSettings() {
 
       </div>
 
-      {/* 會員福利 — 全寬 */}
-      <div style={{ ...cardStyle, marginTop:12 }}>
-        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:14 }}>
-          <div style={{ fontSize:13, fontWeight:500, color:'#111', display:'flex', alignItems:'center', gap:6 }}>
-            <i className="fa-solid fa-gift" style={{ color:'#E24B4A' }}></i> 會員等級福利
-          </div>
-          <button onClick={() => openModal('benefits')} style={btnStyle}><i className="fa-solid fa-pen" style={{ marginRight:3 }}></i> 編輯</button>
-        </div>
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', gap:8 }}>
-          {benefits.map((b, i) => (
-            <div key={b.level} style={{ background:'#f8f8f8', borderRadius:8, padding:'10px 10px' }}>
-              <div style={{ display:'flex', alignItems:'center', gap:4, marginBottom:6 }}>
-                <div style={{ width:7, height:7, borderRadius:'50%', background:LEVEL_COLORS[i], flexShrink:0 }} />
-                <div style={{ fontSize:11, fontWeight:600, color:'#111', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{b.level}</div>
-              </div>
-              {b.items.length === 0
-                ? <div style={{ fontSize:10, color:'#ccc' }}>尚未設定</div>
-                : b.items.map((item, j) => (
-                    <div key={j} style={{ fontSize:10, color:'#555', padding:'2px 0', borderTop: j>0 ? '0.5px solid #eee' : 'none', lineHeight:1.5 }}>• {item}</div>
-                  ))
-              }
-            </div>
-          ))}
-        </div>
-      </div>
-
       {/* ── 彈窗：積分規則 ── */}
       {modal === 'points' && (
         <Overlay onClose={() => setModal(null)}>
@@ -311,52 +257,6 @@ export default function AdminSettings() {
           <Field label="內文"><textarea value={form.body||''} onChange={e => setForm({...form,body:e.target.value})} placeholder="輸入新聞內文..." rows={5} style={{...inputStyle,resize:'vertical',lineHeight:1.6}}/></Field>
           <ModalFooter onClose={() => { setModal(null); setPreview(null) }} onSave={handleSave} saving={saving || uploading} label={uploading?'上傳中...':undefined} />
         </Overlay>
-      )}
-
-      {/* ── 彈窗：會員福利 ── */}
-      {modal === 'benefits' && (
-        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.45)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100 }}>
-          <div style={{ background:'#fff', borderRadius:12, width:520, maxHeight:'88vh', overflowY:'auto', padding:24 }}>
-            <ModalHead title="編輯會員等級福利" sub="設定每個等級的專屬福利項目" onClose={() => setModal(null)} />
-
-            {/* 等級 Tab */}
-            <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom:16 }}>
-              {LEVELS.map((l, i) => (
-                <button key={l.name} onClick={() => { setEditLevelIdx(i); setNewItem('') }}
-                  style={{ padding:'5px 12px', borderRadius:20, fontSize:12, fontWeight:500, cursor:'pointer', border: editLevelIdx===i ? 'none' : '0.5px solid #ddd', background: editLevelIdx===i ? LEVEL_COLORS[i] : '#f8f8f8', color: editLevelIdx===i ? '#fff' : '#666', transition:'all 0.15s' }}>
-                  {l.name}
-                </button>
-              ))}
-            </div>
-
-            {/* 福利列表 */}
-            <div style={{ marginBottom:12, minHeight:60 }}>
-              {benefits[editLevelIdx].items.length === 0
-                ? <div style={{ fontSize:13, color:'#ccc', padding:'16px 0', textAlign:'center' }}>尚未設定任何福利項目</div>
-                : benefits[editLevelIdx].items.map((item, j) => (
-                    <div key={j} style={{ display:'flex', alignItems:'center', gap:8, padding:'8px 10px', background:'#f8f8f8', borderRadius:8, marginBottom:5 }}>
-                      <div style={{ flex:1, fontSize:13, color:'#111' }}>{item}</div>
-                      <button onClick={() => moveItem(editLevelIdx,j,-1)} disabled={j===0} style={{ width:24,height:24,borderRadius:5,border:'0.5px solid #ddd',background:'#fff',fontSize:11,color:j===0?'#ddd':'#666',cursor:j===0?'default':'pointer',display:'flex',alignItems:'center',justifyContent:'center' }}>↑</button>
-                      <button onClick={() => moveItem(editLevelIdx,j,1)} disabled={j===benefits[editLevelIdx].items.length-1} style={{ width:24,height:24,borderRadius:5,border:'0.5px solid #ddd',background:'#fff',fontSize:11,color:j===benefits[editLevelIdx].items.length-1?'#ddd':'#666',cursor:j===benefits[editLevelIdx].items.length-1?'default':'pointer',display:'flex',alignItems:'center',justifyContent:'center' }}>↓</button>
-                      <button onClick={() => removeItem(editLevelIdx,j)} style={{ width:24,height:24,borderRadius:5,border:'0.5px solid #F09595',background:'#fff',fontSize:11,color:'#A32D2D',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center' }}>✕</button>
-                    </div>
-                  ))
-              }
-            </div>
-
-            {/* 新增輸入 */}
-            <div style={{ display:'flex', gap:8, marginBottom:20 }}>
-              <input value={newItem} onChange={e => setNewItem(e.target.value)} onKeyDown={e => e.key==='Enter' && addItem()}
-                placeholder="輸入福利，例：消費享95折" style={{...inputStyle,flex:1}} />
-              <button onClick={addItem} disabled={!newItem.trim()}
-                style={{ padding:'8px 16px', background:newItem.trim()?'#111':'#f0f0f0', border:'none', borderRadius:8, fontSize:13, color:newItem.trim()?'#fff':'#ccc', cursor:newItem.trim()?'pointer':'default', whiteSpace:'nowrap' }}>
-                ＋ 新增
-              </button>
-            </div>
-
-            <ModalFooter onClose={() => setModal(null)} onSave={handleSave} saving={saving} label="儲存福利設定" />
-          </div>
-        </div>
       )}
 
       {/* ── 彈窗：基本頭貼 ── */}
