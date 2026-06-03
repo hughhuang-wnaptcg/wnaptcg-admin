@@ -25,17 +25,43 @@ export default function AdminCards() {
     setMembers(membersData || [])
   }
 
+
+  // 圖片壓縮：限制最長邊 1200px，品質 0.82，輸出 webp
+  function compressImage(file) {
+    return new Promise((resolve) => {
+      const MAX = 1200
+      const QUALITY = 0.82
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        const img = new Image()
+        img.onload = () => {
+          const ratio = Math.min(MAX / img.width, MAX / img.height, 1)
+          const w = Math.round(img.width * ratio)
+          const h = Math.round(img.height * ratio)
+          const canvas = document.createElement('canvas')
+          canvas.width = w; canvas.height = h
+          canvas.getContext('2d').drawImage(img, 0, 0, w, h)
+          canvas.toBlob((blob) => {
+            resolve(new File([blob], file.name.replace(/\.[^.]+$/, '.webp'), { type: 'image/webp' }))
+          }, 'image/webp', QUALITY)
+        }
+        img.src = e.target.result
+      }
+      reader.readAsDataURL(file)
+    })
+  }
+
   async function handleUpload(e) {
-    const file = e.target.files[0]
-    if (!file) return
+    const raw = e.target.files[0]
+    if (!raw) return
     const reader = new FileReader()
     reader.onload = (ev) => setPreview(ev.target.result)
-    reader.readAsDataURL(file)
+    reader.readAsDataURL(raw)
     setUploading(true)
     try {
-      const ext = file.name.split('.').pop()
-      const path = `cards/${Date.now()}.${ext}`
-      const { error: uploadError } = await supabase.storage.from('card-images').upload(path, file, { cacheControl: '3600', upsert: false })
+      const file = await compressImage(raw)
+      const path = `cards/${Date.now()}.webp`
+      const { error: uploadError } = await supabase.storage.from('card-images').upload(path, file, { cacheControl: '3600', upsert: false, contentType: 'image/webp' })
       if (uploadError) throw uploadError
       const { data } = supabase.storage.from('card-images').getPublicUrl(path)
       setForm(f => ({ ...f, image_url: data.publicUrl }))
