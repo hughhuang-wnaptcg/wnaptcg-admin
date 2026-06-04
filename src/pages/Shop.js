@@ -7,6 +7,16 @@ const TIER_OPTIONS = [
   { value: 'vip',     label: 'VIP 商城',  icon: 'fa-crown', color: '#B8860B', bg: '#2A2200' },
 ]
 
+const PRODUCT_TAG_OPTIONS = [
+  { value: '擴充盒', label: '擴充盒', icon: 'fa-box', color: '#E24B4A', bg: '#FCEBEB' },
+  { value: '散包', label: '散包', icon: 'fa-layer-group', color: '#E07B00', bg: '#FFF3E0' },
+  { value: '其他', label: '其他', icon: 'fa-tag', color: '#666', bg: '#F5F5F5' },
+]
+
+function productTagLabel(tag) {
+  return PRODUCT_TAG_OPTIONS.find(t => t.value === tag) || PRODUCT_TAG_OPTIONS.find(t => t.value === '其他')
+}
+
 const STATUS_OPTIONS = [
   { value: 'pending',            label: '待處理',  color: '#E07B00', bg: '#FFF3E0' },
   { value: 'shipping_requested', label: '申請出貨', color: '#3B82F6', bg: '#EFF6FF' },
@@ -40,7 +50,7 @@ export default function Shop() {
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState('products')
   const [modal, setModal] = useState(null)
-  const [form, setForm] = useState({ name: '', description: '', price: '', stock: '', tier: 'general', is_active: true, image_url: '', max_per_member: '1' })
+  const [form, setForm] = useState({ name: '', description: '', price: '', stock: '', tier: 'general', product_tag: '其他', is_active: true, image_url: '', max_per_member: '1' })
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [preview, setPreview] = useState(null)
@@ -91,6 +101,7 @@ export default function Shop() {
       name: form.name, description: form.description || null,
       price: parseInt(form.price), stock: parseInt(form.stock),
       tier: form.tier, is_active: form.is_active,
+      product_tag: form.product_tag || '其他',
       image_url: form.image_url || null,
       max_per_member: parseInt(form.max_per_member) || 1,
     }
@@ -150,12 +161,12 @@ export default function Shop() {
   }
 
   function openNew() {
-    setForm({ name: '', description: '', price: '', stock: '', tier: 'general', is_active: true, image_url: '', max_per_member: '1' })
+    setForm({ name: '', description: '', price: '', stock: '', tier: 'general', product_tag: '其他', is_active: true, image_url: '', max_per_member: '1' })
     setPreview(null); setModal('new')
   }
 
   function openEdit(prod) {
-    setForm({ name: prod.name, description: prod.description || '', price: prod.price, stock: prod.stock, tier: prod.tier, is_active: prod.is_active, image_url: prod.image_url || '', max_per_member: String(prod.max_per_member || 1) })
+    setForm({ name: prod.name, description: prod.description || '', price: prod.price, stock: prod.stock, tier: prod.tier, product_tag: prod.product_tag || '其他', is_active: prod.is_active, image_url: prod.image_url || '', max_per_member: String(prod.max_per_member || 1) })
     setPreview(prod.image_url || null); setModal(prod)
   }
 
@@ -209,16 +220,17 @@ export default function Shop() {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
                 <tr style={{ borderBottom: '0.5px solid #e5e5e5', background: '#f8f8f8' }}>
-                  {['商品', '商城', '點數', '庫存', '每人上限', '狀態', '操作'].map(h => (
+                  {['商品', '商城', '標籤', '點數', '庫存', '每人上限', '狀態', '操作'].map(h => (
                     <th key={h} style={{ padding: '10px 14px', textAlign: 'left', fontSize: 11, fontWeight: 500, color: '#999' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={7} style={{ textAlign: 'center', padding: 40, color: '#aaa' }}>載入中...</td></tr>
+                  <tr><td colSpan={8} style={{ textAlign: 'center', padding: 40, color: '#aaa' }}>載入中...</td></tr>
                 ) : filtered.map(prod => {
                   const tc = tierLabel(prod.tier)
+                  const tag = productTagLabel(prod.product_tag)
                   return (
                     <tr key={prod.id} style={{ borderBottom: '0.5px solid #f0f0f0', opacity: prod.is_active ? 1 : 0.5 }}>
                       <td style={{ padding: '10px 14px' }}>
@@ -236,6 +248,11 @@ export default function Shop() {
                         {tc && <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 99, background: tc.bg, color: tc.color, fontWeight: 600 }}>
                           <i className={`fa-solid ${tc.icon}`} style={{ fontSize: 9, marginRight: 3 }}></i>{tc.label}
                         </span>}
+                      </td>
+                      <td style={{ padding: '10px 14px' }}>
+                        <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 99, background: tag.bg, color: tag.color, fontWeight: 600 }}>
+                          <i className={`fa-solid ${tag.icon}`} style={{ fontSize: 9, marginRight: 3 }}></i>{tag.label}
+                        </span>
                       </td>
                       <td style={{ padding: '10px 14px', fontWeight: 600, color: '#E07B00' }}>{prod.price} 點</td>
                       <td style={{ padding: '10px 14px', color: prod.stock === 0 ? '#E24B4A' : '#111' }}>{prod.stock}</td>
@@ -260,7 +277,7 @@ export default function Shop() {
                   )
                 })}
                 {!loading && filtered.length === 0 && (
-                  <tr><td colSpan={7} style={{ textAlign: 'center', padding: 40, color: '#aaa' }}>尚無商品</td></tr>
+                  <tr><td colSpan={8} style={{ textAlign: 'center', padding: 40, color: '#aaa' }}>尚無商品</td></tr>
                 )}
               </tbody>
             </table>
@@ -446,6 +463,12 @@ export default function Shop() {
               <label style={{ fontSize: 11, color: '#999', display: 'block', marginBottom: 4 }}>所屬商城</label>
               <select value={form.tier} onChange={e => setForm(f => ({ ...f, tier: e.target.value }))} style={inp}>
                 {TIER_OPTIONS.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+              </select>
+            </div>
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ fontSize: 11, color: '#999', display: 'block', marginBottom: 4 }}>商品標籤</label>
+              <select value={form.product_tag} onChange={e => setForm(f => ({ ...f, product_tag: e.target.value }))} style={inp}>
+                {PRODUCT_TAG_OPTIONS.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
               </select>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18 }}>
