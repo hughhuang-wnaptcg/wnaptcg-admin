@@ -126,9 +126,36 @@ await fetchAll(); setModal(null); setPreview(null); setSaving(false)
 }
 
 async function handleDelete(id) {
-if (!window.confirm('確定刪除此品項？')) return
-await supabase.from('menu_items').delete().eq('id', id)
-await fetchAll()
+if (!window.confirm('確定刪除此品項？\n注意：相關訂單的品項明細也會一併清除。')) return
+try {
+  // 1. 找出所有包含此品項的訂單 id
+  const { data: relatedItems } = await supabase
+    .from('menu_order_items')
+    .select('order_id')
+    .eq('item_id', id)
+
+  if (relatedItems?.length > 0) {
+    const orderIds = [...new Set(relatedItems.map(i => i.order_id))]
+    // 2. 刪除相關的 menu_order_items
+    await supabase.from('menu_order_items').delete().eq('item_id', id)
+    // 3. 刪除已沒有品項的 menu_orders（避免空訂單殘留）
+    for (const oid of orderIds) {
+      const { data: remaining } = await supabase
+        .from('menu_order_items')
+        .select('id')
+        .eq('order_id', oid)
+      if (!remaining || remaining.length === 0) {
+        await supabase.from('menu_orders').delete().eq('id', oid)
+      }
+    }
+  }
+  // 4. 刪除商品本體
+  const { error } = await supabase.from('menu_items').delete().eq('id', id)
+  if (error) throw error
+  await fetchAll()
+} catch (err) {
+  alert('刪除失敗：' + err.message)
+}
 }
 
 async function handleToggleActive(item) {
