@@ -2,6 +2,42 @@ import React, { useEffect, useRef, useState } from 'react'
 import { LevelBadge } from '../lib/pokeballs'
 import { supabase } from '../lib/supabase'
 
+function normalizeReward(reward) {
+  if (!reward) return null
+  if (typeof reward === 'string') {
+    const name = reward.trim()
+    return name ? { name, desc: '' } : null
+  }
+  if (typeof reward !== 'object') return null
+  const name = reward.name || reward.title || reward.label || reward.reward || reward.prize || reward.item || ''
+  const desc = reward.desc || reward.description || reward.note || reward.detail || ''
+  if (!name && !desc) return null
+  return { name: name || desc, desc: name ? desc : '' }
+}
+
+function normalizeRewards(rewards) {
+  if (!rewards) return []
+  let value = rewards
+  if (typeof value === 'string') {
+    try {
+      value = JSON.parse(value)
+    } catch (e) {
+      const single = normalizeReward(value)
+      return single ? [single] : []
+    }
+  }
+  if (Array.isArray(value)) return value.map(normalizeReward).filter(Boolean)
+  if (Array.isArray(value?.rewards)) return value.rewards.map(normalizeReward).filter(Boolean)
+  if (Array.isArray(value?.items)) return value.items.map(normalizeReward).filter(Boolean)
+  if (Array.isArray(value?.data)) return value.data.map(normalizeReward).filter(Boolean)
+  if (typeof value === 'object') {
+    const list = Object.values(value).map(normalizeReward).filter(Boolean)
+    if (list.length > 0) return list
+  }
+  const single = normalizeReward(value)
+  return single ? [single] : []
+}
+
 export default function AdminBoss() {
   const [boss, setBoss] = useState(null)
   const [allBosses, setAllBosses] = useState([])
@@ -19,11 +55,14 @@ export default function AdminBoss() {
   useEffect(() => { fetchData() }, [])
 
   async function fetchData() {
-    const [{ data: bossData }, { data: allData }, { data: membersData }] = await Promise.all([
+    const [{ data: bossData, error: bossError }, { data: allData }, { data: membersData }] = await Promise.all([
       supabase.from('boss_challenges').select('*').eq('is_active', true).single(),
       supabase.from('boss_challenges').select('*').order('created_at', { ascending: false }),
       supabase.from('members').select('id, display_name').order('display_name'),
     ])
+    if (bossError && bossError.code !== 'PGRST116') {
+      alert('讀取 Boss 資料失敗：' + bossError.message)
+    }
     setBoss(bossData)
     setAllBosses(allData || [])
     setMembers(membersData || [])
@@ -33,7 +72,7 @@ export default function AdminBoss() {
         .eq('boss_id', bossData.id)
         .order('created_at', { ascending: false })
       setPurchases(pData || [])
-      setBossForm({ name: bossData.name, description: bossData.description || '', image_url: bossData.image_url || '', target_amount: bossData.target_amount, reset_day: bossData.reset_day, rewards: bossData.rewards || [] })
+      setBossForm({ name: bossData.name, description: bossData.description || '', image_url: bossData.image_url || '', target_amount: bossData.target_amount, reset_day: bossData.reset_day, rewards: normalizeRewards(bossData.rewards) })
       setPreview(bossData.image_url || null)
     }
   }
@@ -62,11 +101,15 @@ export default function AdminBoss() {
   async function handleSaveBoss() {
     setSaving(true)
     const thisMonth = new Date().toISOString().slice(0, 7)
-    const payload = { name: bossForm.name, description: bossForm.description, image_url: bossForm.image_url || null, target_amount: parseInt(bossForm.target_amount), reset_day: parseInt(bossForm.reset_day), rewards: bossForm.rewards }
-    if (boss) {
-      await supabase.from('boss_challenges').update(payload).eq('id', boss.id)
-    } else {
-      await supabase.from('boss_challenges').insert({ ...payload, month: thisMonth })
+    const rewards = normalizeRewards(bossForm.rewards).map(r => ({ name: r.name, desc: r.desc || '' }))
+    const payload = { name: bossForm.name, description: bossForm.description, image_url: bossForm.image_url || null, target_amount: parseInt(bossForm.target_amount), reset_day: parseInt(bossForm.reset_day), rewards }
+    const { error } = boss
+      ? await supabase.from('boss_challenges').update(payload).eq('id', boss.id)
+      : await supabase.from('boss_challenges').insert({ ...payload, month: thisMonth })
+    if (error) {
+      alert('Boss 儲存失敗：' + error.message)
+      setSaving(false)
+      return
     }
     await fetchData()
     setModal(null)
@@ -345,7 +388,7 @@ export default function AdminBoss() {
                   style={{ flex: 1, padding: '7px 9px', border: '0.5px solid #ddd', borderRadius: 7, fontSize: 12, color: '#111', outline: 'none' }} />
                 <input value={newReward.desc} onChange={e => setNewReward({ ...newReward, desc: e.target.value })} placeholder="說明（選填）"
                   style={{ flex: 1, padding: '7px 9px', border: '0.5px solid #ddd', borderRadius: 7, fontSize: 12, color: '#111', outline: 'none' }} />
-                <button onClick={() => { if (newReward.name) { setBossForm(f => ({ ...f, rewards: [...f.rewards, newReward] })); setNewReward({ name: '', desc: '' }) } }}
+                <button onClick={() => { if (newReward.name.trim()) { setBossForm(f => ({ ...f, rewards: [...normalizeRewards(f.rewards), { name: newReward.name.trim(), desc: newReward.desc.trim() }] })); setNewReward({ name: '', desc: '' }) } }}
                   style={{ padding: '7px 12px', background: '#E24B4A', color: 'white', border: 'none', borderRadius: 7, fontSize: 12, cursor: 'pointer' }}>＋</button>
               </div>
             </div>
