@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { LevelBadge } from '../lib/pokeballs'
 import { supabase } from '../lib/supabase'
 
@@ -8,10 +8,13 @@ export default function AdminBoss() {
   const [purchases, setPurchases] = useState([])
   const [members, setMembers] = useState([])
   const [modal, setModal] = useState(null)
-  const [bossForm, setBossForm] = useState({ name: '', description: '', target_amount: '', reset_day: 25, rewards: [] })
+  const [bossForm, setBossForm] = useState({ name: '', description: '', image_url: '', target_amount: '', reset_day: 25, rewards: [] })
   const [purchaseForm, setPurchaseForm] = useState({ member_id: '', amount: '', note: '', purchase_date: new Date().toISOString().split('T')[0] })
   const [newReward, setNewReward] = useState({ name: '', desc: '' })
   const [saving, setSaving] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [preview, setPreview] = useState(null)
+  const fileRef = useRef()
 
   useEffect(() => { fetchData() }, [])
 
@@ -30,17 +33,40 @@ export default function AdminBoss() {
         .eq('boss_id', bossData.id)
         .order('created_at', { ascending: false })
       setPurchases(pData || [])
-      setBossForm({ name: bossData.name, description: bossData.description || '', target_amount: bossData.target_amount, reset_day: bossData.reset_day, rewards: bossData.rewards || [] })
+      setBossForm({ name: bossData.name, description: bossData.description || '', image_url: bossData.image_url || '', target_amount: bossData.target_amount, reset_day: bossData.reset_day, rewards: bossData.rewards || [] })
+      setPreview(bossData.image_url || null)
     }
+  }
+
+  async function handleUpload(e) {
+    const file = e.target.files[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = ev => setPreview(ev.target.result)
+    reader.readAsDataURL(file)
+    setUploading(true)
+    try {
+      const ext = file.name.split('.').pop()
+      const path = `boss/${Date.now()}.${ext}`
+      const { error } = await supabase.storage.from('card-images').upload(path, file, { cacheControl: '3600', upsert: false })
+      if (error) throw error
+      const { data } = supabase.storage.from('card-images').getPublicUrl(path)
+      setBossForm(f => ({ ...f, image_url: data.publicUrl }))
+    } catch (err) {
+      alert('Boss 圖片上傳失敗：' + err.message)
+      setPreview(bossForm.image_url || null)
+    }
+    setUploading(false)
   }
 
   async function handleSaveBoss() {
     setSaving(true)
     const thisMonth = new Date().toISOString().slice(0, 7)
+    const payload = { name: bossForm.name, description: bossForm.description, image_url: bossForm.image_url || null, target_amount: parseInt(bossForm.target_amount), reset_day: parseInt(bossForm.reset_day), rewards: bossForm.rewards }
     if (boss) {
-      await supabase.from('boss_challenges').update({ name: bossForm.name, description: bossForm.description, target_amount: parseInt(bossForm.target_amount), reset_day: parseInt(bossForm.reset_day), rewards: bossForm.rewards }).eq('id', boss.id)
+      await supabase.from('boss_challenges').update(payload).eq('id', boss.id)
     } else {
-      await supabase.from('boss_challenges').insert({ name: bossForm.name, description: bossForm.description, target_amount: parseInt(bossForm.target_amount), reset_day: parseInt(bossForm.reset_day), rewards: bossForm.rewards, month: thisMonth })
+      await supabase.from('boss_challenges').insert({ ...payload, month: thisMonth })
     }
     await fetchData()
     setModal(null)
@@ -109,7 +135,12 @@ export default function AdminBoss() {
           <div style={{ background: '#fff', border: '0.5px solid #e5e5e5', borderRadius: 10, padding: 16, marginBottom: 14 }}>
             <div style={{ fontSize: 13, fontWeight: 500, color: '#111', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 14 }}>⚔️ 本月 Boss</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
-              <div style={{ width: 48, height: 48, borderRadius: '50%', background: '#FCEBEB', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, border: '0.5px solid #F09595' }}>⚔️</div>
+              <div style={{ width: 48, height: 48, borderRadius: '50%', background: '#FCEBEB', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, border: '0.5px solid #F09595', overflow: 'hidden', flexShrink: 0 }}>
+                {boss.image_url
+                  ? <img src={boss.image_url} alt={boss.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={e => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'block' }} />
+                  : null}
+                <span style={{ display: boss.image_url ? 'none' : 'block' }}>⚔️</span>
+              </div>
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 15, fontWeight: 500, color: '#111' }}>{boss.name}</div>
                 <div style={{ fontSize: 11, color: '#999', marginTop: 2 }}>{boss.description || '本月挑戰'} · 重置日每月 {boss.reset_day} 號</div>
@@ -261,6 +292,23 @@ export default function AdminBoss() {
               <span style={{ fontSize: 18, cursor: 'pointer', color: '#aaa' }} onClick={() => setModal(null)}>✕</span>
             </div>
             <div style={{ fontSize: 12, color: '#999', marginBottom: 16 }}>設定本月挑戰內容</div>
+            <input ref={fileRef} type="file" accept="image/*" onChange={handleUpload} style={{ display: 'none' }} />
+            <div onClick={() => !uploading && fileRef.current?.click()}
+              style={{ border: '0.5px dashed #ddd', borderRadius: 8, padding: 14, textAlign: 'center', cursor: uploading ? 'not-allowed' : 'pointer', background: '#f8f8f8', marginBottom: 14, minHeight: 96, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+              {preview
+                ? <img src={preview} alt="" style={{ maxWidth: '100%', maxHeight: 150, objectFit: 'contain', borderRadius: 8 }} />
+                : <div style={{ color: '#aaa' }}>
+                    <i className="fa-solid fa-image" style={{ fontSize: 24, display: 'block', marginBottom: 6 }}></i>
+                    <div style={{ fontSize: 12 }}>{uploading ? '上傳中...' : '點擊上傳 Boss 圖片'}</div>
+                  </div>
+              }
+            </div>
+            {preview && !uploading && (
+              <div style={{ display: 'flex', justifyContent: 'center', gap: 14, marginBottom: 14 }}>
+                <span onClick={() => fileRef.current?.click()} style={{ fontSize: 12, color: '#E24B4A', cursor: 'pointer' }}>重新上傳</span>
+                <span onClick={() => { setPreview(null); setBossForm(f => ({ ...f, image_url: '' })) }} style={{ fontSize: 12, color: '#999', cursor: 'pointer' }}>移除圖片</span>
+              </div>
+            )}
             {[
               { label: 'Boss 名稱', key: 'name', placeholder: '例：訓練家 Giovanni' },
               { label: '描述（選填）', key: 'description', placeholder: '例：火焰道館最終Boss' },
@@ -303,9 +351,9 @@ export default function AdminBoss() {
             </div>
             <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
               <button onClick={() => setModal(null)} style={{ flex: 1, padding: 9, border: '0.5px solid #ddd', borderRadius: 8, fontSize: 13, color: '#666', background: 'transparent', cursor: 'pointer' }}>取消</button>
-              <button onClick={handleSaveBoss} disabled={saving}
-                style={{ flex: 1, padding: 9, background: saving ? '#ccc' : '#E24B4A', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 500, color: 'white', cursor: saving ? 'not-allowed' : 'pointer' }}>
-                {saving ? '儲存中...' : '儲存'}
+              <button onClick={handleSaveBoss} disabled={saving || uploading}
+                style={{ flex: 1, padding: 9, background: saving || uploading ? '#ccc' : '#E24B4A', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 500, color: 'white', cursor: saving || uploading ? 'not-allowed' : 'pointer' }}>
+                {saving ? '儲存中...' : uploading ? '上傳中...' : '儲存'}
               </button>
             </div>
           </div>
