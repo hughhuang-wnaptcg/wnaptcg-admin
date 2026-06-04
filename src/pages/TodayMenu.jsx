@@ -15,6 +15,16 @@ dine_in: { label: '內用', color: '#A32D2D', bg: '#FCEBEB' },
 takeout: { label: '外帶', color: '#1a1a1a', bg: '#F0F0F0' },
 }
 
+const PRODUCT_TAG_OPTIONS = [
+{ value: '擴充盒', label: '擴充盒', icon: 'fa-box', color: '#E24B4A', bg: '#FCEBEB' },
+{ value: '散包', label: '散包', icon: 'fa-layer-group', color: '#E07B00', bg: '#FFF3E0' },
+{ value: '其他', label: '其他', icon: 'fa-tag', color: '#666', bg: '#F5F5F5' },
+]
+
+function productTagLabel(tag) {
+return PRODUCT_TAG_OPTIONS.find(t => t.value === tag) || PRODUCT_TAG_OPTIONS.find(t => t.value === '其他')
+}
+
 // 格式化日期為 YYYY-MM-DD（台灣時間）
 function toLocalDateStr(date) {
 const d = new Date(date)
@@ -33,7 +43,7 @@ const [items, setItems] = useState([])
 const [orders, setOrders] = useState([])
 const [loading, setLoading] = useState(true)
 const [modal, setModal] = useState(null)
-const [form, setForm] = useState({ name: '', description: '', price: '', stock: '', dine_in: true, takeout: true, is_active: true, image_url: '' })
+const [form, setForm] = useState({ name: '', description: '', price: '', stock: '', product_tag: '其他', dine_in: true, takeout: true, is_active: true, image_url: '' })
 const [saving, setSaving] = useState(false)
 const [uploading, setUploading] = useState(false)
 const [preview, setPreview] = useState(null)
@@ -112,6 +122,7 @@ name: form.name.trim(),
 description: form.description.trim() || null,
 price: parseInt(form.price),
 stock: parseInt(form.stock),
+product_tag: form.product_tag || '其他',
 dine_in: form.dine_in,
 takeout: form.takeout,
 is_active: form.is_active,
@@ -171,12 +182,12 @@ setUpdatingOrder(null)
 }
 
 function openNew() {
-setForm({ name: '', description: '', price: '', stock: '', dine_in: true, takeout: true, is_active: true, image_url: '' })
+setForm({ name: '', description: '', price: '', stock: '', product_tag: '其他', dine_in: true, takeout: true, is_active: true, image_url: '' })
 setPreview(null); setModal('new')
 }
 
 function openEdit(item) {
-setForm({ name: item.name, description: item.description || '', price: item.price, stock: item.stock, dine_in: item.dine_in, takeout: item.takeout, is_active: item.is_active, image_url: item.image_url || '' })
+setForm({ name: item.name, description: item.description || '', price: item.price, stock: item.stock, product_tag: item.product_tag || '其他', dine_in: item.dine_in, takeout: item.takeout, is_active: item.is_active, image_url: item.image_url || '' })
 setPreview(item.image_url || null); setModal(item)
 }
 
@@ -234,15 +245,17 @@ style={{ flex: 1, padding: '8px 0', borderRadius: 8, border: 'none', fontSize: 1
 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
 <thead>
 <tr style={{ borderBottom: '0.5px solid #e5e5e5', background: '#f8f8f8' }}>
-{['商品', '價格', '庫存', '支援方式', '狀態', '操作'].map(h => (
+{['商品', '標籤', '價格', '庫存', '支援方式', '狀態', '操作'].map(h => (
 <th key={h} style={{ padding: '10px 14px', textAlign: 'left', fontSize: 11, fontWeight: 500, color: '#999' }}>{h}</th>
 ))}
 </tr>
 </thead>
 <tbody>
 {loading ? (
-<tr><td colSpan={6} style={{ textAlign: 'center', padding: 40, color: '#aaa' }}>載入中...</td></tr>
-) : items.map(item => (
+<tr><td colSpan={7} style={{ textAlign: 'center', padding: 40, color: '#aaa' }}>載入中...</td></tr>
+) : items.map(item => {
+const tag = productTagLabel(item.product_tag)
+return (
 <tr key={item.id} style={{ borderBottom: '0.5px solid #f0f0f0', opacity: item.is_active ? 1 : 0.5 }}>
 <td style={{ padding: '10px 14px' }}>
 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -254,6 +267,11 @@ style={{ flex: 1, padding: '8px 0', borderRadius: 8, border: 'none', fontSize: 1
 {item.description && <div style={{ fontSize: 11, color: '#999', marginTop: 1 }}>{item.description}</div>}
 </div>
 </div>
+</td>
+<td style={{ padding: '10px 14px' }}>
+<span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 99, background: tag.bg, color: tag.color, fontWeight: 600 }}>
+<i className={`fa-solid ${tag.icon}`} style={{ fontSize: 9, marginRight: 3 }}></i>{tag.label}
+</span>
 </td>
 <td style={{ padding: '10px 14px', fontWeight: 600, color: '#E24B4A' }}>$ {item.price}</td>
 <td style={{ padding: '10px 14px', color: item.stock === 0 ? '#E24B4A' : '#111', fontWeight: item.stock === 0 ? 600 : 400 }}>{item.stock}</td>
@@ -278,9 +296,10 @@ style={{ width: 36, height: 20, borderRadius: 99, cursor: 'pointer', background:
 </button>
 </td>
 </tr>
-))}
+)
+})}
 {!loading && items.length === 0 && (
-<tr><td colSpan={6} style={{ textAlign: 'center', padding: 40, color: '#aaa' }}>尚無商品，點右上角新增</td></tr>
+<tr><td colSpan={7} style={{ textAlign: 'center', padding: 40, color: '#aaa' }}>尚無商品，點右上角新增</td></tr>
 )}
 </tbody>
 </table>
@@ -474,6 +493,12 @@ style={{ border: '0.5px dashed #E0E0E0', borderRadius: 8, marginBottom: 14, minH
 <label style={{ fontSize: 11, color: '#999', display: 'block', marginBottom: 4 }}>庫存數量 *</label>
 <input type="number" value={form.stock} onChange={e => setForm(f => ({ ...f, stock: e.target.value }))} placeholder="20" style={inp} />
 </div>
+</div>
+<div style={{ marginBottom: 12 }}>
+<label style={{ fontSize: 11, color: '#999', display: 'block', marginBottom: 4 }}>商品標籤</label>
+<select value={form.product_tag} onChange={e => setForm(f => ({ ...f, product_tag: e.target.value }))} style={inp}>
+{PRODUCT_TAG_OPTIONS.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+</select>
 </div>
 <div style={{ marginBottom: 12 }}>
 <label style={{ fontSize: 11, color: '#999', display: 'block', marginBottom: 8 }}>支援取貨方式</label>
