@@ -12,14 +12,14 @@ Deno.serve(async (req) => {
 
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')
-    const secretKeys = Deno.env.get('SUPABASE_SECRET_KEYS')
+    const serviceRoleKey = getServiceRoleKey()
     const authHeader = req.headers.get('Authorization')
 
-    if (!supabaseUrl || !secretKeys || !authHeader) {
+    if (!supabaseUrl || !serviceRoleKey || !authHeader) {
       throw new Error('Missing server configuration or authorization')
     }
 
-    const admin = createClient(supabaseUrl, JSON.parse(secretKeys).default, {
+    const admin = createClient(supabaseUrl, serviceRoleKey, {
       auth: { autoRefreshToken: false, persistSession: false },
     })
     const token = authHeader.replace('Bearer ', '')
@@ -55,20 +55,38 @@ Deno.serve(async (req) => {
       'card_owners',
     ]) {
       const { error } = await admin.from(table).delete().eq('member_id', userId)
-      if (error) throw error
+      if (error) throw new Error(`Failed to delete ${table}: ${error.message}`)
     }
 
-    const { error: authError } = await admin.auth.admin.deleteUser(userId)
-    if (authError) throw authError
-
     const { error: memberError } = await admin.from('members').delete().eq('id', userId)
-    if (memberError) throw memberError
+    if (memberError) throw new Error(`Failed to delete member: ${memberError.message}`)
+
+    const { error: authError } = await admin.auth.admin.deleteUser(userId)
+    if (authError && authError.status !== 404) {
+      throw new Error(`Failed to delete auth user: ${authError.message}`)
+    }
 
     return json({ ok: true })
   } catch (error) {
+    console.error('delete-member failed', error)
     return json({ error: error.message }, 500)
   }
 })
+
+function getServiceRoleKey() {
+  const directKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+  if (directKey) return directKey
+
+  const secretKeys = Deno.env.get('SUPABASE_SECRET_KEYS')
+  if (!secretKeys) return null
+
+  try {
+    const parsed = JSON.parse(secretKeys)
+    return parsed.service_role || parsed.serviceRole || parsed.default || null
+  } catch {
+    return secretKeys
+  }
+}
 
 function json(body: Record<string, unknown>, status = 200) {
   return new Response(JSON.stringify(body), {
