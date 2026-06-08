@@ -1,3 +1,4 @@
+// src/pages/Shop.js
 import React, { useEffect, useState, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 
@@ -6,16 +7,6 @@ const TIER_OPTIONS = [
   { value: 'premium', label: '高級商城', icon: 'fa-gem',   color: '#3B82F6', bg: '#EFF6FF' },
   { value: 'vip',     label: 'VIP 商城',  icon: 'fa-crown', color: '#B8860B', bg: '#2A2200' },
 ]
-
-const PRODUCT_TAG_OPTIONS = [
-  { value: '擴充盒', label: '擴充盒', icon: 'fa-box', color: '#E24B4A', bg: '#FCEBEB' },
-  { value: '散包', label: '散包', icon: 'fa-layer-group', color: '#E07B00', bg: '#FFF3E0' },
-  { value: '其他', label: '其他', icon: 'fa-tag', color: '#666', bg: '#F5F5F5' },
-]
-
-function productTagLabel(tag) {
-  return PRODUCT_TAG_OPTIONS.find(t => t.value === tag) || PRODUCT_TAG_OPTIONS.find(t => t.value === '其他')
-}
 
 const STATUS_OPTIONS = [
   { value: 'pending',            label: '待處理',  color: '#E07B00', bg: '#FFF3E0' },
@@ -34,13 +25,35 @@ function groupOrders(orders) {
     } else {
       map[key].qty += 1
       map[key].ids.push(o.id)
-      // 取最新時間
       if (new Date(o.created_at) > new Date(map[key].created_at)) {
         map[key].created_at = o.created_at
       }
     }
   })
   return Object.values(map).sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+}
+
+// 圖片壓縮為 WebP（最長邊 1200px，品質 0.82）
+function compressToWebP(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    const url = URL.createObjectURL(file)
+    img.onload = () => {
+      URL.revokeObjectURL(url)
+      const MAX = 1200
+      let w = img.width, h = img.height
+      if (w > MAX || h > MAX) {
+        if (w > h) { h = Math.round(h * MAX / w); w = MAX }
+        else { w = Math.round(w * MAX / h); h = MAX }
+      }
+      const canvas = document.createElement('canvas')
+      canvas.width = w; canvas.height = h
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h)
+      canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('壓縮失敗')), 'image/webp', 0.82)
+    }
+    img.onerror = reject
+    img.src = url
+  })
 }
 
 export default function Shop() {
@@ -50,7 +63,7 @@ export default function Shop() {
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState('products')
   const [modal, setModal] = useState(null)
-  const [form, setForm] = useState({ name: '', description: '', price: '', stock: '', tier: 'general', product_tag: '其他', is_active: true, image_url: '', max_per_member: '1' })
+  const [form, setForm] = useState({ name: '', description: '', price: '', stock: '', tier: 'general', is_active: true, image_url: '', max_per_member: '1' })
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [preview, setPreview] = useState(null)
@@ -84,33 +97,47 @@ export default function Shop() {
     reader.readAsDataURL(file)
     setUploading(true)
     try {
-      const ext = file.name.split('.').pop()
-      const path = `shop/${Date.now()}.${ext}`
-      const { error } = await supabase.storage.from('shop-images').upload(path, file, { upsert: false })
+      const blob = await compressToWebP(file)
+      const path = `menu/${Date.now()}.webp`
+      const { error } = await supabase.storage.from('card-images').upload(path, blob, { upsert: false, contentType: 'image/webp' })
       if (error) throw error
-      const { data } = supabase.storage.from('shop-images').getPublicUrl(path)
+      const { data } = supabase.storage.from('card-images').getPublicUrl(path)
       setForm(f => ({ ...f, image_url: data.publicUrl }))
-    } catch (err) { alert('圖片上傳失敗：' + err.message); setPreview(null) }
+    } catch (err) {
+      alert('圖片上傳失敗：' + err.message)
+      setPreview(null)
+    }
     setUploading(false)
   }
 
   async function handleSave() {
     if (!form.name || !form.price || !form.stock) return
     setSaving(true)
-    const payload = {
-      name: form.name, description: form.description || null,
-      price: parseInt(form.price), stock: parseInt(form.stock),
-      tier: form.tier, is_active: form.is_active,
-      product_tag: form.product_tag || '其他',
-      image_url: form.image_url || null,
-      max_per_member: parseInt(form.max_per_member) || 1,
+    try {
+      const payload = {
+        name: form.name,
+        description: form.description || null,
+        price: parseInt(form.price),
+        stock: parseInt(form.stock),
+        tier: form.tier,
+        is_active: form.is_active,
+        image_url: form.image_url || null,
+        max_per_member: parseInt(form.max_per_member) || 1,
+      }
+      if (modal === 'new') {
+        const { error } = await supabase.from('shop_products').insert(payload)
+        if (error) throw error
+      } else {
+        const { error } = await supabase.from('shop_products').update(payload).eq('id', modal.id)
+        if (error) throw error
+      }
+      await fetchAll()
+      setModal(null)
+      setPreview(null)
+    } catch (err) {
+      alert('儲存失敗：' + err.message)
     }
-    if (modal === 'new') {
-      await supabase.from('shop_products').insert(payload)
-    } else {
-      await supabase.from('shop_products').update(payload).eq('id', modal.id)
-    }
-    await fetchAll(); setModal(null); setPreview(null); setSaving(false)
+    setSaving(false)
   }
 
   async function handleDelete(id) {
@@ -132,7 +159,6 @@ export default function Shop() {
     setProducts(prev => prev.map(p => p.id === prod.id ? { ...p, is_active: !p.is_active } : p))
   }
 
-  // 批量更新一組 ids
   async function handleUpdateGroupStatus(ids, newStatus) {
     const key = ids.join(',')
     setUpdatingOrder(key)
@@ -151,8 +177,8 @@ export default function Shop() {
     if (!member) { setPointsSaving(false); return }
     const newPoints = Math.max(0, (member.shop_points || 0) + delta)
     await supabase.from('members').update({ shop_points: newPoints }).eq('id', member.id)
-    await supabase.from('points_logs').insert({
-      member_id: member.id, points: delta, type: 'manual',
+    await supabase.from('point_logs').insert({
+      member_id: member.id, points: delta, type: 'admin',
       note: pointsForm.note || '管理員手動調整點數',
     })
     await fetchAll()
@@ -161,18 +187,17 @@ export default function Shop() {
   }
 
   function openNew() {
-    setForm({ name: '', description: '', price: '', stock: '', tier: 'general', product_tag: '其他', is_active: true, image_url: '', max_per_member: '1' })
+    setForm({ name: '', description: '', price: '', stock: '', tier: 'general', is_active: true, image_url: '', max_per_member: '1' })
     setPreview(null); setModal('new')
   }
 
   function openEdit(prod) {
-    setForm({ name: prod.name, description: prod.description || '', price: prod.price, stock: prod.stock, tier: prod.tier, product_tag: prod.product_tag || '其他', is_active: prod.is_active, image_url: prod.image_url || '', max_per_member: String(prod.max_per_member || 1) })
+    setForm({ name: prod.name, description: prod.description || '', price: prod.price, stock: prod.stock, tier: prod.tier, is_active: prod.is_active, image_url: prod.image_url || '', max_per_member: String(prod.max_per_member || 1) })
     setPreview(prod.image_url || null); setModal(prod)
   }
 
   const filtered = products.filter(p => !filterTier || p.tier === filterTier)
 
-  // 合併訂單，再篩選狀態
   const groupedOrders = groupOrders(orders)
   const filteredGrouped = groupedOrders.filter(o => !filterStatus || o.status === filterStatus)
   const pendingCount = groupedOrders.filter(o => o.status === 'pending' || o.status === 'shipping_requested').length
@@ -220,17 +245,16 @@ export default function Shop() {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
                 <tr style={{ borderBottom: '0.5px solid #e5e5e5', background: '#f8f8f8' }}>
-                  {['商品', '商城', '標籤', '點數', '庫存', '每人上限', '狀態', '操作'].map(h => (
+                  {['商品', '商城', '點數', '庫存', '每人上限', '狀態', '操作'].map(h => (
                     <th key={h} style={{ padding: '10px 14px', textAlign: 'left', fontSize: 11, fontWeight: 500, color: '#999' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={8} style={{ textAlign: 'center', padding: 40, color: '#aaa' }}>載入中...</td></tr>
+                  <tr><td colSpan={7} style={{ textAlign: 'center', padding: 40, color: '#aaa' }}>載入中...</td></tr>
                 ) : filtered.map(prod => {
                   const tc = tierLabel(prod.tier)
-                  const tag = productTagLabel(prod.product_tag)
                   return (
                     <tr key={prod.id} style={{ borderBottom: '0.5px solid #f0f0f0', opacity: prod.is_active ? 1 : 0.5 }}>
                       <td style={{ padding: '10px 14px' }}>
@@ -248,11 +272,6 @@ export default function Shop() {
                         {tc && <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 99, background: tc.bg, color: tc.color, fontWeight: 600 }}>
                           <i className={`fa-solid ${tc.icon}`} style={{ fontSize: 9, marginRight: 3 }}></i>{tc.label}
                         </span>}
-                      </td>
-                      <td style={{ padding: '10px 14px' }}>
-                        <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 99, background: tag.bg, color: tag.color, fontWeight: 600 }}>
-                          <i className={`fa-solid ${tag.icon}`} style={{ fontSize: 9, marginRight: 3 }}></i>{tag.label}
-                        </span>
                       </td>
                       <td style={{ padding: '10px 14px', fontWeight: 600, color: '#E07B00' }}>{prod.price} 點</td>
                       <td style={{ padding: '10px 14px', color: prod.stock === 0 ? '#E24B4A' : '#111' }}>{prod.stock}</td>
@@ -277,7 +296,7 @@ export default function Shop() {
                   )
                 })}
                 {!loading && filtered.length === 0 && (
-                  <tr><td colSpan={8} style={{ textAlign: 'center', padding: 40, color: '#aaa' }}>尚無商品</td></tr>
+                  <tr><td colSpan={7} style={{ textAlign: 'center', padding: 40, color: '#aaa' }}>尚無商品</td></tr>
                 )}
               </tbody>
             </table>
@@ -459,16 +478,10 @@ export default function Shop() {
                 <input type="number" min="1" value={form.max_per_member} onChange={e => setForm(f => ({ ...f, max_per_member: e.target.value }))} placeholder="1" style={inp} />
               </div>
             </div>
-            <div style={{ marginBottom: 12 }}>
+            <div style={{ marginBottom: 16 }}>
               <label style={{ fontSize: 11, color: '#999', display: 'block', marginBottom: 4 }}>所屬商城</label>
               <select value={form.tier} onChange={e => setForm(f => ({ ...f, tier: e.target.value }))} style={inp}>
                 {TIER_OPTIONS.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-              </select>
-            </div>
-            <div style={{ marginBottom: 12 }}>
-              <label style={{ fontSize: 11, color: '#999', display: 'block', marginBottom: 4 }}>商品標籤</label>
-              <select value={form.product_tag} onChange={e => setForm(f => ({ ...f, product_tag: e.target.value }))} style={inp}>
-                {PRODUCT_TAG_OPTIONS.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
               </select>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18 }}>
