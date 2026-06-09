@@ -2,40 +2,19 @@ import React, { useEffect, useRef, useState } from 'react'
 import { LevelBadge } from '../lib/pokeballs'
 import { supabase } from '../lib/supabase'
 
-function normalizeReward(reward) {
-  if (!reward) return null
-  if (typeof reward === 'string') {
-    const name = reward.trim()
-    return name ? { name, desc: '' } : null
-  }
-  if (typeof reward !== 'object') return null
-  const name = reward.name || reward.title || reward.label || reward.reward || reward.prize || reward.item || ''
-  const desc = reward.desc || reward.description || reward.note || reward.detail || ''
-  if (!name && !desc) return null
-  return { name: name || desc, desc: name ? desc : '' }
-}
-
-function normalizeRewards(rewards) {
-  if (!rewards) return []
-  let value = rewards
-  if (typeof value === 'string') {
-    try {
-      value = JSON.parse(value)
-    } catch (e) {
-      const single = normalizeReward(value)
-      return single ? [single] : []
-    }
-  }
-  if (Array.isArray(value)) return value.map(normalizeReward).filter(Boolean)
-  if (Array.isArray(value?.rewards)) return value.rewards.map(normalizeReward).filter(Boolean)
-  if (Array.isArray(value?.items)) return value.items.map(normalizeReward).filter(Boolean)
-  if (Array.isArray(value?.data)) return value.data.map(normalizeReward).filter(Boolean)
-  if (typeof value === 'object') {
-    const list = Object.values(value).map(normalizeReward).filter(Boolean)
-    if (list.length > 0) return list
-  }
-  const single = normalizeReward(value)
-  return single ? [single] : []
+// ── 解析里程碑 ─────────────────────────────────────────
+function parseMilestones(boss) {
+  try {
+    const r = boss?.rewards
+    const val = typeof r === 'string' ? JSON.parse(r) : r
+    if (val?.milestones && Array.isArray(val.milestones)) return val.milestones
+  } catch (e) {}
+  return [
+    { pct: 25, label: '討伐 25%', reward: '' },
+    { pct: 50, label: '討伐 50%', reward: '' },
+    { pct: 75, label: '討伐 75%', reward: '' },
+    { pct: 100, label: '最終大獎', reward: '' },
+  ]
 }
 
 export default function AdminBoss() {
@@ -44,9 +23,14 @@ export default function AdminBoss() {
   const [purchases, setPurchases] = useState([])
   const [members, setMembers] = useState([])
   const [modal, setModal] = useState(null)
-  const [bossForm, setBossForm] = useState({ name: '', description: '', image_url: '', target_amount: '', reset_day: 25, rewards: [] })
+  const [milestones, setMilestones] = useState([
+    { pct: 25, label: '討伐 25%', reward: '' },
+    { pct: 50, label: '討伐 50%', reward: '' },
+    { pct: 75, label: '討伐 75%', reward: '' },
+    { pct: 100, label: '最終大獎', reward: '' },
+  ])
+  const [bossForm, setBossForm] = useState({ name: '', description: '', image_url: '', target_amount: '', reset_day: 25 })
   const [purchaseForm, setPurchaseForm] = useState({ member_id: '', amount: '', note: '', purchase_date: new Date().toISOString().split('T')[0] })
-  const [newReward, setNewReward] = useState({ name: '', desc: '' })
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [preview, setPreview] = useState(null)
@@ -60,9 +44,7 @@ export default function AdminBoss() {
       supabase.from('boss_challenges').select('*').order('created_at', { ascending: false }),
       supabase.from('members').select('id, display_name').order('display_name'),
     ])
-    if (bossError && bossError.code !== 'PGRST116') {
-      alert('讀取 Boss 資料失敗：' + bossError.message)
-    }
+    if (bossError && bossError.code !== 'PGRST116') alert('讀取 Boss 資料失敗：' + bossError.message)
     setBoss(bossData)
     setAllBosses(allData || [])
     setMembers(membersData || [])
@@ -72,7 +54,8 @@ export default function AdminBoss() {
         .eq('boss_id', bossData.id)
         .order('created_at', { ascending: false })
       setPurchases(pData || [])
-      setBossForm({ name: bossData.name, description: bossData.description || '', image_url: bossData.image_url || '', target_amount: bossData.target_amount, reset_day: bossData.reset_day, rewards: normalizeRewards(bossData.rewards) })
+      setBossForm({ name: bossData.name, description: bossData.description || '', image_url: bossData.image_url || '', target_amount: bossData.target_amount, reset_day: bossData.reset_day })
+      setMilestones(parseMilestones(bossData))
       setPreview(bossData.image_url || null)
     }
   }
@@ -99,18 +82,22 @@ export default function AdminBoss() {
   }
 
   async function handleSaveBoss() {
+    if (!bossForm.name || !bossForm.target_amount) return
     setSaving(true)
     const thisMonth = new Date().toISOString().slice(0, 7)
-    const rewards = normalizeRewards(bossForm.rewards).map(r => ({ name: r.name, desc: r.desc || '' }))
-    const payload = { name: bossForm.name, description: bossForm.description, image_url: bossForm.image_url || null, target_amount: parseInt(bossForm.target_amount), reset_day: parseInt(bossForm.reset_day), rewards }
+    const rewardsPayload = { milestones: milestones.map(m => ({ pct: m.pct, label: m.label, reward: m.reward || '' })) }
+    const payload = {
+      name: bossForm.name,
+      description: bossForm.description,
+      image_url: bossForm.image_url || null,
+      target_amount: parseInt(bossForm.target_amount),
+      reset_day: parseInt(bossForm.reset_day),
+      rewards: rewardsPayload,
+    }
     const { error } = boss
       ? await supabase.from('boss_challenges').update(payload).eq('id', boss.id)
       : await supabase.from('boss_challenges').insert({ ...payload, month: thisMonth })
-    if (error) {
-      alert('Boss 儲存失敗：' + error.message)
-      setSaving(false)
-      return
-    }
+    if (error) { alert('Boss 儲存失敗：' + error.message); setSaving(false); return }
     await fetchData()
     setModal(null)
     setSaving(false)
@@ -156,17 +143,18 @@ export default function AdminBoss() {
   }
 
   const progress = boss ? Math.round((boss.current_amount / boss.target_amount) * 100) : 0
+  const inp = { width: '100%', padding: '8px 10px', border: '0.5px solid #ddd', borderRadius: 7, fontSize: 13, color: '#111', outline: 'none', boxSizing: 'border-box' }
 
   return (
-    <div style={{ padding: 24, position: 'relative' }}>
+    <div style={{ padding: 24 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
         <div style={{ fontSize: 20, fontWeight: 500, color: '#111' }}>Boss 管理</div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={() => setModal('boss')} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'transparent', color: '#666', border: '0.5px solid #ddd', borderRadius: 8, padding: '8px 14px', fontSize: 13, cursor: 'pointer' }}>
+          <button onClick={() => setModal('boss')} style={{ background: 'transparent', color: '#666', border: '0.5px solid #ddd', borderRadius: 8, padding: '8px 14px', fontSize: 13, cursor: 'pointer' }}>
             ⚙️ {boss ? '編輯 Boss 設定' : '建立 Boss 挑戰'}
           </button>
           {boss && (
-            <button onClick={() => setModal('purchase')} style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#E24B4A', color: 'white', border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>
+            <button onClick={() => setModal('purchase')} style={{ background: '#E24B4A', color: 'white', border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>
               ＋ 新增消費紀錄
             </button>
           )}
@@ -176,13 +164,11 @@ export default function AdminBoss() {
       {boss ? (
         <>
           <div style={{ background: '#fff', border: '0.5px solid #e5e5e5', borderRadius: 10, padding: 16, marginBottom: 14 }}>
-            <div style={{ fontSize: 13, fontWeight: 500, color: '#111', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 14 }}>⚔️ 本月 Boss</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
-              <div style={{ width: 48, height: 48, borderRadius: '50%', background: '#FCEBEB', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, border: '0.5px solid #F09595', overflow: 'hidden', flexShrink: 0 }}>
+              <div style={{ width: 48, height: 48, borderRadius: '50%', background: '#FCEBEB', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '0.5px solid #F09595', overflow: 'hidden', flexShrink: 0 }}>
                 {boss.image_url
-                  ? <img src={boss.image_url} alt={boss.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={e => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'block' }} />
-                  : null}
-                <span style={{ display: boss.image_url ? 'none' : 'block' }}>⚔️</span>
+                  ? <img src={boss.image_url} alt={boss.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  : <span style={{ fontSize: 22 }}>⚔️</span>}
               </div>
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 15, fontWeight: 500, color: '#111' }}>{boss.name}</div>
@@ -191,13 +177,36 @@ export default function AdminBoss() {
               <span style={{ fontSize: 11, padding: '3px 9px', borderRadius: 20, background: '#EAF3DE', color: '#27500A' }}>✓ 進行中</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#999', marginBottom: 4 }}>
-              <span>進度</span><span style={{ color: '#A32D2D', fontWeight: 500 }}>${boss.current_amount?.toLocaleString()} / ${boss.target_amount?.toLocaleString()} · {progress}%</span>
+              <span>進度</span>
+              <span style={{ color: '#A32D2D', fontWeight: 500 }}>${boss.current_amount?.toLocaleString()} / ${boss.target_amount?.toLocaleString()} · {progress}%</span>
             </div>
             <div style={{ height: 10, background: '#f5f5f5', borderRadius: 99, overflow: 'hidden', border: '0.5px solid #e5e5e5' }}>
               <div style={{ height: '100%', width: `${progress}%`, background: '#E24B4A', borderRadius: 99 }} />
             </div>
+
+            {/* 里程碑預覽 */}
+            <div style={{ marginTop: 14 }}>
+              <div style={{ fontSize: 11, color: '#999', marginBottom: 8 }}>里程碑進度</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 6 }}>
+                {parseMilestones(boss).map((m, i) => {
+                  const unlocked = progress >= m.pct
+                  return (
+                    <div key={i} style={{ background: unlocked ? '#fdfaf4' : '#f8f8f8', border: `0.5px solid ${unlocked ? '#FAC775' : '#e5e5e5'}`, borderRadius: 8, padding: '7px 4px', textAlign: 'center' }}>
+                      <div style={{ fontSize: 11, fontWeight: 500, color: unlocked ? '#854F0B' : '#bbb' }}>{m.pct}%</div>
+                      <div style={{ fontSize: 9, color: unlocked ? '#633806' : '#ccc', marginTop: 2 }}>{m.reward || '未設定'}</div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8, marginTop: 12 }}>
-              {[{ num: purchases.length, label: '筆紀錄' }, { num: `$${boss.current_amount?.toLocaleString()}`, label: '累積消費' }, { num: `$${boss.target_amount?.toLocaleString()}`, label: '目標' }, { num: `$${(boss.target_amount - boss.current_amount)?.toLocaleString()}`, label: '距目標' }].map((s, i) => (
+              {[
+                { num: purchases.length, label: '筆紀錄' },
+                { num: `$${boss.current_amount?.toLocaleString()}`, label: '累積消費' },
+                { num: `$${boss.target_amount?.toLocaleString()}`, label: '目標' },
+                { num: `$${(boss.target_amount - boss.current_amount)?.toLocaleString()}`, label: '距目標' },
+              ].map((s, i) => (
                 <div key={i} style={{ background: '#f8f8f8', borderRadius: 8, padding: 10, textAlign: 'center' }}>
                   <div style={{ fontSize: 14, fontWeight: 500, color: '#111' }}>{s.num}</div>
                   <div style={{ fontSize: 10, color: '#999', marginTop: 2 }}>{s.label}</div>
@@ -220,7 +229,9 @@ export default function AdminBoss() {
                   <tr key={p.id} style={{ borderBottom: '0.5px solid #f0f0f0' }}>
                     <td style={{ padding: '10px 14px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                        <div style={{ width: 22, height: 22, borderRadius: '50%', background: '#FAEEDA', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 600, color: '#633806' }}>{p.members?.display_name?.[0]}</div>
+                        <div style={{ width: 22, height: 22, borderRadius: '50%', background: '#FAEEDA', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 600, color: '#633806' }}>
+                          {p.members?.display_name?.[0]}
+                        </div>
                         {p.members?.display_name}
                       </div>
                     </td>
@@ -228,7 +239,9 @@ export default function AdminBoss() {
                     <td style={{ padding: '10px 14px', color: '#999' }}>{p.purchase_date}</td>
                     <td style={{ padding: '10px 14px', color: '#999' }}>{p.note || '-'}</td>
                     <td style={{ padding: '10px 14px' }}>
-                      <button onClick={() => handleDeletePurchase(p)} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '4px 8px', border: '0.5px solid #F09595', borderRadius: 6, fontSize: 11, color: '#A32D2D', background: 'transparent', cursor: 'pointer' }}>🗑️ 刪除</button>
+                      <button onClick={() => handleDeletePurchase(p)} style={{ padding: '4px 8px', border: '0.5px solid #F09595', borderRadius: 6, fontSize: 11, color: '#A32D2D', background: 'transparent', cursor: 'pointer' }}>
+                        🗑️ 刪除
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -240,7 +253,9 @@ export default function AdminBoss() {
         <div style={{ background: '#fff', border: '0.5px solid #e5e5e5', borderRadius: 10, padding: 40, textAlign: 'center', marginBottom: 20 }}>
           <div style={{ fontSize: 40, marginBottom: 8 }}>⚔️</div>
           <div style={{ fontSize: 14, color: '#aaa', marginBottom: 16 }}>尚未設定本月 Boss</div>
-          <button onClick={() => setModal('boss')} style={{ background: '#E24B4A', color: 'white', border: 'none', borderRadius: 8, padding: '10px 20px', fontSize: 14, cursor: 'pointer' }}>建立 Boss 挑戰</button>
+          <button onClick={() => setModal('boss')} style={{ background: '#E24B4A', color: 'white', border: 'none', borderRadius: 8, padding: '10px 20px', fontSize: 14, cursor: 'pointer' }}>
+            建立 Boss 挑戰
+          </button>
         </div>
       )}
 
@@ -268,11 +283,13 @@ export default function AdminBoss() {
                       ? <span style={{ fontSize: 11, background: '#EAF3DE', color: '#27500A', padding: '2px 8px', borderRadius: 20 }}>進行中</span>
                       : <span style={{ fontSize: 11, background: '#f5f5f5', color: '#999', padding: '2px 8px', borderRadius: 20 }}>已結束</span>}
                   </td>
-                  <td style={{ padding: '10px 14px', display: 'flex', gap: 6 }}>
-                    {!b.is_active && (
-                      <button onClick={() => handleSetActive(b)} style={{ padding: '4px 8px', border: '0.5px solid #ddd', borderRadius: 6, fontSize: 11, color: '#666', background: 'transparent', cursor: 'pointer' }}>設為進行中</button>
-                    )}
-                    <button onClick={() => handleDeleteBoss(b)} style={{ padding: '4px 8px', border: '0.5px solid #F09595', borderRadius: 6, fontSize: 11, color: '#A32D2D', background: 'transparent', cursor: 'pointer' }}>🗑️ 刪除</button>
+                  <td style={{ padding: '10px 14px' }}>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      {!b.is_active && (
+                        <button onClick={() => handleSetActive(b)} style={{ padding: '4px 8px', border: '0.5px solid #ddd', borderRadius: 6, fontSize: 11, color: '#666', background: 'transparent', cursor: 'pointer' }}>設為進行中</button>
+                      )}
+                      <button onClick={() => handleDeleteBoss(b)} style={{ padding: '4px 8px', border: '0.5px solid #F09595', borderRadius: 6, fontSize: 11, color: '#A32D2D', background: 'transparent', cursor: 'pointer' }}>🗑️ 刪除</button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -281,7 +298,7 @@ export default function AdminBoss() {
         </div>
       )}
 
-      {/* 新增消費彈出視窗 */}
+      {/* ── 新增消費 Modal ── */}
       {modal === 'purchase' && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div style={{ background: '#fff', borderRadius: 12, width: 340, padding: 20 }}>
@@ -293,7 +310,7 @@ export default function AdminBoss() {
             <div style={{ marginBottom: 12 }}>
               <label style={{ fontSize: 11, color: '#999', display: 'block', marginBottom: 4 }}>會員</label>
               <select value={purchaseForm.member_id} onChange={e => setPurchaseForm({ ...purchaseForm, member_id: e.target.value })}
-                style={{ width: '100%', padding: '8px 10px', border: '0.5px solid #ddd', borderRadius: 7, fontSize: 13, background: '#fff', color: '#111' }}>
+                style={{ ...inp, background: '#fff' }}>
                 <option value="">選擇會員...</option>
                 {members.map(m => <option key={m.id} value={m.id}>{m.display_name}</option>)}
               </select>
@@ -301,19 +318,16 @@ export default function AdminBoss() {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
               <div>
                 <label style={{ fontSize: 11, color: '#999', display: 'block', marginBottom: 4 }}>消費金額（元）</label>
-                <input type="number" value={purchaseForm.amount} onChange={e => setPurchaseForm({ ...purchaseForm, amount: e.target.value })} placeholder="3,200"
-                  style={{ width: '100%', padding: '8px 10px', border: '0.5px solid #ddd', borderRadius: 7, fontSize: 13, color: '#111', outline: 'none' }} />
+                <input type="number" value={purchaseForm.amount} onChange={e => setPurchaseForm({ ...purchaseForm, amount: e.target.value })} placeholder="3200" style={inp} />
               </div>
               <div>
                 <label style={{ fontSize: 11, color: '#999', display: 'block', marginBottom: 4 }}>消費日期</label>
-                <input type="date" value={purchaseForm.purchase_date} onChange={e => setPurchaseForm({ ...purchaseForm, purchase_date: e.target.value })}
-                  style={{ width: '100%', padding: '8px 10px', border: '0.5px solid #ddd', borderRadius: 7, fontSize: 13, color: '#111', outline: 'none' }} />
+                <input type="date" value={purchaseForm.purchase_date} onChange={e => setPurchaseForm({ ...purchaseForm, purchase_date: e.target.value })} style={inp} />
               </div>
             </div>
             <div style={{ marginBottom: 16 }}>
               <label style={{ fontSize: 11, color: '#999', display: 'block', marginBottom: 4 }}>備註（選填）</label>
-              <input value={purchaseForm.note} onChange={e => setPurchaseForm({ ...purchaseForm, note: e.target.value })} placeholder="例：購買補充包 × 8"
-                style={{ width: '100%', padding: '8px 10px', border: '0.5px solid #ddd', borderRadius: 7, fontSize: 13, color: '#111', outline: 'none' }} />
+              <input value={purchaseForm.note} onChange={e => setPurchaseForm({ ...purchaseForm, note: e.target.value })} placeholder="例：購買補充包 × 8" style={inp} />
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
               <button onClick={() => setModal(null)} style={{ flex: 1, padding: 9, border: '0.5px solid #ddd', borderRadius: 8, fontSize: 13, color: '#666', background: 'transparent', cursor: 'pointer' }}>取消</button>
@@ -326,25 +340,26 @@ export default function AdminBoss() {
         </div>
       )}
 
-      {/* Boss設定彈出視窗 */}
+      {/* ── Boss 設定 Modal ── */}
       {modal === 'boss' && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
-          <div style={{ background: '#fff', borderRadius: 12, width: 380, padding: 20, maxHeight: '90vh', overflowY: 'auto' }}>
+          <div style={{ background: '#fff', borderRadius: 12, width: 400, padding: 20, maxHeight: '90vh', overflowY: 'auto' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
               <div style={{ fontSize: 15, fontWeight: 500, color: '#111' }}>Boss 設定</div>
               <span style={{ fontSize: 18, cursor: 'pointer', color: '#aaa' }} onClick={() => setModal(null)}>✕</span>
             </div>
             <div style={{ fontSize: 12, color: '#999', marginBottom: 16 }}>設定本月挑戰內容</div>
+
+            {/* 圖片上傳 */}
             <input ref={fileRef} type="file" accept="image/*" onChange={handleUpload} style={{ display: 'none' }} />
             <div onClick={() => !uploading && fileRef.current?.click()}
               style={{ border: '0.5px dashed #ddd', borderRadius: 8, padding: 14, textAlign: 'center', cursor: uploading ? 'not-allowed' : 'pointer', background: '#f8f8f8', marginBottom: 14, minHeight: 96, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
               {preview
                 ? <img src={preview} alt="" style={{ maxWidth: '100%', maxHeight: 150, objectFit: 'contain', borderRadius: 8 }} />
                 : <div style={{ color: '#aaa' }}>
-                    <i className="fa-solid fa-image" style={{ fontSize: 24, display: 'block', marginBottom: 6 }}></i>
+                    <div style={{ fontSize: 24, marginBottom: 6 }}>📷</div>
                     <div style={{ fontSize: 12 }}>{uploading ? '上傳中...' : '點擊上傳 Boss 圖片'}</div>
-                  </div>
-              }
+                  </div>}
             </div>
             {preview && !uploading && (
               <div style={{ display: 'flex', justifyContent: 'center', gap: 14, marginBottom: 14 }}>
@@ -352,47 +367,51 @@ export default function AdminBoss() {
                 <span onClick={() => { setPreview(null); setBossForm(f => ({ ...f, image_url: '' })) }} style={{ fontSize: 12, color: '#999', cursor: 'pointer' }}>移除圖片</span>
               </div>
             )}
+
+            {/* 基本欄位 */}
             {[
-              { label: 'Boss 名稱', key: 'name', placeholder: '例：訓練家 Giovanni' },
-              { label: '描述（選填）', key: 'description', placeholder: '例：火焰道館最終Boss' },
+              { label: 'Boss 名稱', key: 'name', placeholder: '例：火箭隊首領 阿波羅' },
+              { label: '描述 / Boss 台詞（選填）', key: 'description', placeholder: '例：阻止我們吧，訓練家們。' },
             ].map(f => (
               <div key={f.key} style={{ marginBottom: 12 }}>
                 <label style={{ fontSize: 11, color: '#999', display: 'block', marginBottom: 4 }}>{f.label}</label>
-                <input value={bossForm[f.key]} onChange={e => setBossForm({ ...bossForm, [f.key]: e.target.value })} placeholder={f.placeholder}
-                  style={{ width: '100%', padding: '8px 10px', border: '0.5px solid #ddd', borderRadius: 7, fontSize: 13, color: '#111', outline: 'none' }} />
+                <input value={bossForm[f.key]} onChange={e => setBossForm({ ...bossForm, [f.key]: e.target.value })} placeholder={f.placeholder} style={inp} />
               </div>
             ))}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>
               <div>
                 <label style={{ fontSize: 11, color: '#999', display: 'block', marginBottom: 4 }}>消費目標（元）</label>
-                <input type="number" value={bossForm.target_amount} onChange={e => setBossForm({ ...bossForm, target_amount: e.target.value })} placeholder="100000"
-                  style={{ width: '100%', padding: '8px 10px', border: '0.5px solid #ddd', borderRadius: 7, fontSize: 13, color: '#111', outline: 'none' }} />
+                <input type="number" value={bossForm.target_amount} onChange={e => setBossForm({ ...bossForm, target_amount: e.target.value })} placeholder="50000" style={inp} />
               </div>
               <div>
                 <label style={{ fontSize: 11, color: '#999', display: 'block', marginBottom: 4 }}>重置日（幾號）</label>
-                <input type="number" min="1" max="31" value={bossForm.reset_day} onChange={e => setBossForm({ ...bossForm, reset_day: e.target.value })}
-                  style={{ width: '100%', padding: '8px 10px', border: '0.5px solid #ddd', borderRadius: 7, fontSize: 13, color: '#111', outline: 'none' }} />
+                <input type="number" min="1" max="31" value={bossForm.reset_day} onChange={e => setBossForm({ ...bossForm, reset_day: e.target.value })} style={inp} />
               </div>
             </div>
-            <div style={{ marginBottom: 12 }}>
-              <label style={{ fontSize: 11, color: '#999', display: 'block', marginBottom: 8 }}>擊敗獎勵</label>
-              {bossForm.rewards.map((r, i) => (
-                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 8, background: '#f8f8f8', borderRadius: 8, marginBottom: 6 }}>
-                  <div style={{ width: 28, height: 28, borderRadius: 6, background: '#FAEEDA', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14 }}>🎁</div>
-                  <div style={{ flex: 1, fontSize: 12, color: '#111' }}>{r.name}{r.desc ? ` · ${r.desc}` : ''}</div>
-                  <span style={{ cursor: 'pointer', color: '#A32D2D', fontSize: 14 }} onClick={() => setBossForm(f => ({ ...f, rewards: f.rewards.filter((_, j) => j !== i) }))}>✕</span>
+
+            {/* 里程碑獎勵 */}
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 11, color: '#999', marginBottom: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span>里程碑獎勵</span>
+                <span style={{ fontSize: 10, color: '#bbb' }}>各階段討伐達成後發放</span>
+              </div>
+              {milestones.map((m, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                  <div style={{ width: 48, height: 32, borderRadius: 6, background: '#f8f8f8', border: '0.5px solid #e5e5e5', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <span style={{ fontSize: 11, fontWeight: 500, color: '#888' }}>{m.pct}%</span>
+                  </div>
+                  <input
+                    value={m.reward}
+                    onChange={e => setMilestones(ms => ms.map((x, j) => j === i ? { ...x, reward: e.target.value } : x))}
+                    placeholder={i === 3 ? '最終大獎獎勵內容' : `討伐 ${m.pct}% 獎勵內容`}
+                    style={{ ...inp, flex: 1 }}
+                  />
                 </div>
               ))}
-              <div style={{ display: 'flex', gap: 6 }}>
-                <input value={newReward.name} onChange={e => setNewReward({ ...newReward, name: e.target.value })} placeholder="獎勵名稱"
-                  style={{ flex: 1, padding: '7px 9px', border: '0.5px solid #ddd', borderRadius: 7, fontSize: 12, color: '#111', outline: 'none' }} />
-                <input value={newReward.desc} onChange={e => setNewReward({ ...newReward, desc: e.target.value })} placeholder="說明（選填）"
-                  style={{ flex: 1, padding: '7px 9px', border: '0.5px solid #ddd', borderRadius: 7, fontSize: 12, color: '#111', outline: 'none' }} />
-                <button onClick={() => { if (newReward.name.trim()) { setBossForm(f => ({ ...f, rewards: [...normalizeRewards(f.rewards), { name: newReward.name.trim(), desc: newReward.desc.trim() }] })); setNewReward({ name: '', desc: '' }) } }}
-                  style={{ padding: '7px 12px', background: '#E24B4A', color: 'white', border: 'none', borderRadius: 7, fontSize: 12, cursor: 'pointer' }}>＋</button>
-              </div>
+              <div style={{ fontSize: 10, color: '#bbb', marginTop: 4 }}>留空表示該里程碑無獎勵</div>
             </div>
-            <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+
+            <div style={{ display: 'flex', gap: 8 }}>
               <button onClick={() => setModal(null)} style={{ flex: 1, padding: 9, border: '0.5px solid #ddd', borderRadius: 8, fontSize: 13, color: '#666', background: 'transparent', cursor: 'pointer' }}>取消</button>
               <button onClick={handleSaveBoss} disabled={saving || uploading}
                 style={{ flex: 1, padding: 9, background: saving || uploading ? '#ccc' : '#E24B4A', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 500, color: 'white', cursor: saving || uploading ? 'not-allowed' : 'pointer' }}>
