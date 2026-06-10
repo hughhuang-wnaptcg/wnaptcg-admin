@@ -12,6 +12,7 @@ const NAV = [
   { path: '/grading',     label: '鑑定管理',  icon: 'fa-medal' },
   { path: '/shop',        label: '商城管理',  icon: 'fa-store' },
   { path: '/today-menu',  label: '本日菜單',  icon: 'fa-utensils', color: '#388E3C', activeBg: '#F0FFF4', activeColor: '#14532D' },
+  { path: '/board',       label: '留言板管理', icon: 'fa-comment-dots', color: '#E07B00', activeBg: '#FFF3E0', activeColor: '#8B5A00' },
   { path: '/settings',    label: '系統設定',  icon: 'fa-gear' },
 ]
 
