@@ -99,7 +99,6 @@ export default function App() {
       else { setAdmin(null); setLoading(false); cleanupChannels() }
     })
     return () => { subscription.unsubscribe(); cleanupChannels() }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   function cleanupChannels() {
