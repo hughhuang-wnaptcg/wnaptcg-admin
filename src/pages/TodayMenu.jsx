@@ -59,6 +59,50 @@ export default function TodayMenu() {
 
   useEffect(() => { fetchAll() }, [])
 
+  // 即時更新 + 新訂單提示音：訂閱 menu_orders INSERT
+  useEffect(() => {
+    const channel = supabase
+      .channel('admin_menu_orders_realtime')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'menu_orders' }, () => {
+        playNewOrderChime()   // 真正有新訂單才響
+        fetchAll()
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'menu_orders' }, () => { fetchAll() })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'menu_order_items' }, () => { fetchAll() })
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // 明顯的新訂單提示音（Web Audio 合成，連響三聲上升「叮咚」，不需外部音檔）
+  function playNewOrderChime() {
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext
+      if (!AC) return
+      const ctx = new AC()
+      const notes = [
+        { f: 784, t: 0.00 },  // G5
+        { f: 988, t: 0.18 },  // B5
+        { f: 1175, t: 0.36 }, // D6
+      ]
+      notes.forEach(({ f, t }) => {
+        const osc = ctx.createOscillator()
+        const gain = ctx.createGain()
+        osc.type = 'sine'
+        osc.frequency.value = f
+        osc.connect(gain); gain.connect(ctx.destination)
+        const start = ctx.currentTime + t
+        gain.gain.setValueAtTime(0, start)
+        gain.gain.linearRampToValueAtTime(0.35, start + 0.02)
+        gain.gain.exponentialRampToValueAtTime(0.001, start + 0.55)
+        osc.start(start)
+        osc.stop(start + 0.6)
+      })
+      // 收尾關閉
+      setTimeout(() => { ctx.close().catch(() => {}) }, 1300)
+    } catch (e) { /* 靜默失敗，不影響功能 */ }
+  }
+
   async function fetchAll() {
     setLoading(true)
     const [{ data: itemsData }, { data: ordersData }] = await Promise.all([
