@@ -71,7 +71,6 @@ export default function TodayMenu() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'menu_order_items' }, () => { fetchAll() })
       .subscribe()
     return () => { supabase.removeChannel(channel) }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // 明顯的新訂單提示音（Web Audio 合成，連響三聲上升「叮咚」，不需外部音檔）
@@ -100,7 +99,9 @@ export default function TodayMenu() {
       })
       // 收尾關閉
       setTimeout(() => { ctx.close().catch(() => {}) }, 1300)
-    } catch (e) { /* 靜默失敗，不影響功能 */ }
+    } catch (err) {
+      console.warn('提示音播放失敗', err)
+    }
   }
 
   async function fetchAll() {
