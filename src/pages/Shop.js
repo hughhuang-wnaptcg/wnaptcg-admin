@@ -56,6 +56,36 @@ function compressToWebP(file) {
   })
 }
 
+// 明顯的提示音（Web Audio 合成，連響三聲上升「叮咚」，不需外部音檔）
+function playShipRequestChime() {
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext
+    if (!AC) return
+    const ctx = new AC()
+    const notes = [
+      { f: 784, t: 0.00 },
+      { f: 988, t: 0.18 },
+      { f: 1175, t: 0.36 },
+    ]
+    notes.forEach(({ f, t }) => {
+      const osc = ctx.createOscillator()
+      const gain = ctx.createGain()
+      osc.type = 'sine'
+      osc.frequency.value = f
+      osc.connect(gain); gain.connect(ctx.destination)
+      const start = ctx.currentTime + t
+      gain.gain.setValueAtTime(0, start)
+      gain.gain.linearRampToValueAtTime(0.35, start + 0.02)
+      gain.gain.exponentialRampToValueAtTime(0.001, start + 0.55)
+      osc.start(start)
+      osc.stop(start + 0.6)
+    })
+    setTimeout(() => { ctx.close().catch(() => {}) }, 1300)
+  } catch (err) {
+    console.warn('提示音播放失敗', err)
+  }
+}
+
 export default function Shop() {
   const [products, setProducts] = useState([])
   const [members, setMembers] = useState([])
@@ -75,6 +105,21 @@ export default function Shop() {
   const fileRef = useRef()
 
   useEffect(() => { fetchAll() }, [])
+
+  // 即時更新：訂閱 shop_orders 變動，自動重抓；會員「申請出貨」時播提示音
+  useEffect(() => {
+    const channel = supabase
+      .channel('admin_shop_orders_realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'shop_orders' }, (payload) => {
+        // 只有當訂單狀態變成「申請出貨」時才響
+        if (payload.eventType === 'UPDATE' && payload.new?.status === 'shipping_requested' && payload.old?.status !== 'shipping_requested') {
+          playShipRequestChime()
+        }
+        fetchAll()
+      })
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [])
 
   async function fetchAll() {
     setLoading(true)
