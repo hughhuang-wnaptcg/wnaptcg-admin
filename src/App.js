@@ -13,6 +13,7 @@ import Settings from './pages/Settings'
 import Grading from './pages/Grading'
 import Shop from './pages/Shop'
 import TodayMenu from './pages/TodayMenu'
+import Board from './pages/Board'
 
 // ── 音效（Web Audio API，不需要音效檔）────────────────
 function playNotificationSound(type = 'menu') {
@@ -98,6 +99,7 @@ export default function App() {
       else { setAdmin(null); setLoading(false); cleanupChannels() }
     })
     return () => { subscription.unsubscribe(); cleanupChannels() }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   function cleanupChannels() {
@@ -179,6 +181,7 @@ export default function App() {
           <Route path="grading" element={<Grading />} />
           <Route path="shop" element={<Shop />} />
           <Route path="today-menu" element={<TodayMenu />} />
+          <Route path="board" element={<Board />} />
           <Route path="settings" element={<Settings />} />
         </Route>
       </Routes>
